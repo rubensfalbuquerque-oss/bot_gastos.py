@@ -870,8 +870,31 @@ async def processar_gasto(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             )
             return
 
-    # verifica se está aguardando novo nome de categoria
+    # verifica se está aguardando dia do recorrente
     chat_id = update.message.chat_id
+    pending_dia = ctx.bot_data.get(f"aguarda_dia_rec_{chat_id}")
+    if pending_dia:
+        try:
+            dia = int(texto.strip())
+            if dia < 1 or dia > 31:
+                raise ValueError
+            dados = pending_dia
+            del ctx.bot_data[f"aguarda_dia_rec_{chat_id}"]
+            ctx.bot_data.pop(f"lanc_confirm_{chat_id}", None)
+            salvar_recorrente(dados["categoria"], dados["valor"], dados["descricao"], dia)
+            await update.message.reply_text(
+                f"🔁 *Recorrente salvo!*\nTodo dia *{dia}* — {dados['categoria'].capitalize()} {fmt_brl(dados['valor'])}"
+                + (f" — {dados['descricao']}" if dados.get('descricao') else ""),
+                parse_mode="Markdown"
+            )
+            gastos = buscar_gastos_mes()
+            await update.message.reply_text(formatar_resumo(gastos), parse_mode="Markdown")
+            await enviar_painel(update.message, ctx)
+        except ValueError:
+            await update.message.reply_text("❌ Dia inválido. Digite um número entre 1 e 31.")
+        return
+
+    # verifica se está aguardando novo nome de categoria
     pending_rename = ctx.bot_data.get(f"aguarda_rename_{chat_id}")
     if pending_rename:
         novo_nome = texto.strip().lower()
@@ -1228,25 +1251,22 @@ async def handle_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         partes = query.data.split(":")
         resposta = partes[1]
         chat_id = query.message.chat_id
-        dados = ctx.bot_data.pop(f"lanc_confirm_{chat_id}", None)
-        if not dados:
-            await query.edit_message_text("⚠️ Dados expirados. Tente novamente.")
-            return
-        if resposta == "sim":
-            dia = agora_br().strftime("%d")
-            try:
-                salvar_recorrente(dados["categoria"], dados["valor"], dados["descricao"], dia)
-                await query.edit_message_text(
-                    f"🔁 Recorrente salvo! Todo dia *{dia}* — {dados['categoria'].capitalize()} {fmt_brl(dados['valor'])}",
-                    parse_mode="Markdown"
-                )
-            except Exception as e:
-                await query.edit_message_text(f"❌ Erro ao salvar recorrente:\n`{e}`", parse_mode="Markdown")
-        else:
+
+        if resposta == "nao":
+            ctx.bot_data.pop(f"lanc_confirm_{chat_id}", None)
             await query.edit_message_text("👍 Lançamento avulso registrado.")
-        gastos = buscar_gastos_mes()
-        await query.message.reply_text(formatar_resumo(gastos), parse_mode="Markdown")
-        await enviar_painel(query.message, ctx)
+            await enviar_painel(query.message, ctx)
+            return
+
+        if resposta == "sim_pergunta":
+            # mantém dados e aguarda o dia
+            ctx.bot_data[f"aguarda_dia_rec_{chat_id}"] = ctx.bot_data.get(f"lanc_confirm_{chat_id}")
+            await query.message.reply_text(
+                "📅 Em qual dia do mês este gasto se repete?\n\nDigite o número do dia (1 a 31):",
+                parse_mode="Markdown"
+            )
+            return
+
         return
 
     if query.data.startswith("remcat:"):
@@ -1309,18 +1329,19 @@ async def handle_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             await query.edit_message_text("👍 Ok, lançamento avulso registrado.")
             await enviar_painel(query.message, ctx)
             return
-        # rec:sim:categoria:valor:descricao:dia
-        _, _, cat, val, desc, dia = partes
-        try:
-            salvar_recorrente(cat, float(val), desc, dia)
+        if acao == "sim":
+            # fluxo antigo — pede dia
+            chat_id = query.message.chat_id
+            if len(partes) >= 6:
+                _, _, cat, val, desc, dia = partes[:6]
+                ctx.bot_data[f"aguarda_dia_rec_{chat_id}"] = {
+                    "categoria": cat, "valor": float(val), "descricao": desc
+                }
             await query.edit_message_text(
-                f"🔁 *Recorrente salvo!*\n"
-                f"Todo dia *{dia}* será lembrado: {cat.capitalize()} {fmt_brl(float(val))}"
-                + (f" — {desc}" if desc else ""),
+                "📅 Em qual dia do mês este gasto se repete?\n\nDigite o número do dia (1 a 31):",
                 parse_mode="Markdown"
             )
-        except Exception as e:
-            await query.edit_message_text(f"❌ Erro ao salvar recorrente:\n`{e}`", parse_mode="Markdown")
+            return
         return
 
     if query.data.startswith("novacat:"):
@@ -1458,7 +1479,7 @@ def main():
     app.add_handler(CallbackQueryHandler(handle_callback))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, processar_gasto))
 
-    print("Bot rodando v32...")
+    print("Bot rodando v33...")
     app.run_polling(drop_pending_updates=True)
 
 if __name__ == "__main__":
