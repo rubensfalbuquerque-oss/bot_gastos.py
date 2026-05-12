@@ -402,6 +402,7 @@ async def cmd_historico(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
         if not todos:
             await update.message.reply_text("Nenhum lançamento este mês ainda.")
+            await enviar_painel(update.message, ctx)
             return
 
         linhas = [f"📋 *Tabela de gastos — {hoje}*\n"]
@@ -443,6 +444,7 @@ async def cmd_meusgastos(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
         if not por_autor:
             await update.message.reply_text("Nenhum lançamento este mês ainda.")
+            await enviar_painel(update.message, ctx)
             return
 
         total_geral = sum(r["valor"] for regs in gastos.values() for r in regs)
@@ -470,6 +472,7 @@ async def cmd_deletar(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         registros = buscar_todos_mes()
         if not registros:
             await update.message.reply_text("Nenhum lançamento este mês para deletar.")
+            await enviar_painel(update.message, ctx)
             return
 
         # monta botões — máximo 20 para não estourar o Telegram
@@ -501,6 +504,7 @@ async def cmd_recorrentes(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         registros = buscar_recorrentes()
         if not registros:
             await update.message.reply_text("Nenhum lançamento recorrente cadastrado.")
+            await enviar_painel(update.message, ctx)
             return
         hoje = agora_br().strftime("%d/%m/%Y")
         linhas = [f"🔁 *Lançamentos recorrentes — {hoje}*\n"]
@@ -522,6 +526,7 @@ async def cmd_desfazer(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         removido = remover_ultimo()
         if not removido:
             await update.message.reply_text("Nenhum lançamento para desfazer.")
+            await enviar_painel(update.message, ctx)
             return
         await update.message.reply_text(
             f"↩️ Removido:\n*{removido['categoria'].capitalize()}* — {fmt_brl(float(removido['valor']))}"
@@ -904,7 +909,8 @@ async def handle_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     for r in regs
                 ]
                 if not todos:
-                    await query.edit_message_text("Nenhum lançamento este mês ainda.")
+                    await query.message.reply_text("Nenhum lançamento este mês ainda.")
+                    await enviar_painel(query.message, ctx)
                     return
                 linhas = [f"📋 *Tabela de gastos — {hoje}*\n"]
                 for cat, limite in ORCAMENTO.items():
@@ -937,7 +943,8 @@ async def handle_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                         por_autor[autor]["total"] += r["valor"]
                         por_autor[autor]["cats"][cat] = por_autor[autor]["cats"].get(cat, 0) + r["valor"]
                 if not por_autor:
-                    await query.edit_message_text("Nenhum lançamento este mês ainda.")
+                    await query.message.reply_text("Nenhum lançamento este mês ainda.")
+                    await enviar_painel(query.message, ctx)
                     return
                 total_geral = sum(r["valor"] for regs in gastos.values() for r in regs)
                 linhas = [f"👤 *Gastos por usuário — {hoje}*\n"]
@@ -963,7 +970,8 @@ async def handle_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     for r in regs:
                         todos.append({**r, "categoria": cat})
                 if not todos:
-                    await query.edit_message_text("Nenhum lançamento este mês ainda.")
+                    await query.message.reply_text("Nenhum lançamento este mês ainda.")
+                    await enviar_painel(query.message, ctx)
                     return
                 hoje = agora_br().strftime("%d/%m/%Y")
                 ultimos = todos[-10:]
@@ -990,7 +998,8 @@ async def handle_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             try:
                 registros = buscar_recorrentes()
                 if not registros:
-                    await query.edit_message_text("Nenhum lançamento recorrente cadastrado.")
+                    await query.message.reply_text("Nenhum lançamento recorrente cadastrado.")
+                    await enviar_painel(query.message, ctx)
                     return
                 hoje = agora_br().strftime("%d/%m/%Y")
                 linhas = [f"🔁 *Lançamentos recorrentes — {hoje}*\n"]
@@ -1012,7 +1021,8 @@ async def handle_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             try:
                 registros = buscar_todos_mes()
                 if not registros:
-                    await query.edit_message_text("Nenhum lançamento este mês para deletar.")
+                    await query.message.reply_text("Nenhum lançamento este mês para deletar.")
+                    await enviar_painel(query.message, ctx)
                     return
                 botoes = []
                 for i, reg in enumerate(registros[:20], start=1):
@@ -1037,7 +1047,8 @@ async def handle_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             try:
                 removido = remover_ultimo()
                 if not removido:
-                    await query.edit_message_text("Nenhum lançamento para desfazer.")
+                    await query.message.reply_text("Nenhum lançamento para desfazer.")
+                    await enviar_painel(query.message, ctx)
                     return
                 await query.edit_message_text(
                     f"↩️ Removido:\n*{removido['categoria'].capitalize()}* — {fmt_brl(float(removido['valor']))}"
@@ -1223,7 +1234,7 @@ def main():
     app.add_handler(CallbackQueryHandler(handle_callback))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, processar_gasto))
 
-    print("Bot rodando v26...")
+    print("Bot rodando v27...")
     app.run_polling()
 
 if __name__ == "__main__":
