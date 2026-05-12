@@ -186,10 +186,12 @@ def formatar_resumo(gastos):
             f"   Saldo: R$ {saldo:.2f}\n"
         )
     saldo_total = total_orc - total_gasto
+    pct_usado = (total_gasto / total_orc * 100) if total_orc else 0
+    pct_saldo = 100 - pct_usado
     linhas.append(
         f"{'─'*28}\n"
-        f"{emoji_status(total_gasto, total_orc)} *TOTAL: R$ {total_gasto:.2f} / {total_orc:.2f}*\n"
-        f"Saldo geral: R$ {saldo_total:.2f}"
+        f"{emoji_status(total_gasto, total_orc)} *TOTAL: R$ {total_gasto:.2f} / {total_orc:.2f}* ({pct_usado:.0f}% usado)\n"
+        f"Saldo geral: R$ {saldo_total:.2f} ({pct_saldo:.0f}% restante)"
     )
     return "\n".join(linhas)
 
@@ -341,9 +343,10 @@ async def cmd_meusgastos(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
         for autor, info in sorted(por_autor.items()):
             pct = info["total"] / total_geral * 100 if total_geral else 0
-            linhas.append(f"*{autor}* — R$ {info['total']:.2f} ({pct:.0f}%)")
+            linhas.append(f"*{autor}* — R$ {info['total']:.2f} ({pct:.0f}% do total)")
             for cat, val in sorted(info["cats"].items(), key=lambda x: -x[1]):
-                linhas.append(f"   • {cat.capitalize()}: R$ {val:.2f}")
+                pct_cat = val / info["total"] * 100 if info["total"] else 0
+                linhas.append(f"   • {cat.capitalize()}: R$ {val:.2f} ({pct_cat:.0f}%)")
             linhas.append("")
 
         linhas.append(f"{'─'*20}")
@@ -691,7 +694,7 @@ def main():
     app.add_handler(CallbackQueryHandler(handle_callback))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, processar_gasto))
 
-    print("Bot rodando v5...")
+    print("Bot rodando v6...")
     app.run_polling()
 
 if __name__ == "__main__":
