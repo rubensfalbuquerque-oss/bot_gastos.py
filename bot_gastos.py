@@ -160,7 +160,8 @@ def deletar_por_id(id_registro):
 def barra(gasto, limite, largura=10):
     pct = min(gasto / limite, 1.0) if limite else 0
     cheio = int(pct * largura)
-    return "█" * cheio + "░" * (largura - cheio)
+    vazio = largura - cheio
+    return "▓" * cheio + "░" * vazio
 
 def emoji_status(gasto, limite):
     if not limite: return "⚪"
@@ -180,9 +181,10 @@ def formatar_resumo(gastos):
         total_gasto += gasto
         saldo = limite - gasto
         b = barra(gasto, limite)
+        pct_cat = (gasto / limite * 100) if limite else 0
         linhas.append(
-            f"{emoji_status(gasto, limite)} *{cat.capitalize()}*\n"
-            f"   `{b}` {gasto:.0f}/{limite:.0f}\n"
+            f"{emoji_status(gasto, limite)} *{cat.capitalize()}* — R$ {gasto:.0f} de R$ {limite:.0f} ({pct_cat:.0f}%)\n"
+            f"   `{b}`\n"
             f"   Saldo: R$ {saldo:.2f}\n"
         )
     saldo_total = total_orc - total_gasto
@@ -694,7 +696,7 @@ def main():
     app.add_handler(CallbackQueryHandler(handle_callback))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, processar_gasto))
 
-    print("Bot rodando v6...")
+    print("Bot rodando v7...")
     app.run_polling()
 
 if __name__ == "__main__":
