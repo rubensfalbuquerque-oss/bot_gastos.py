@@ -265,6 +265,7 @@ async def cmd_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         "`mercado`  `restaurante`  `transporte`\n"
         "`lazer`  `saude`  `moradia`  `roupas`  `outros`\n\n"
         "*Comandos:*\n"
+        "/painel — painel clicável com todas as funções\n"
         "/resumo — saldo de todas as categorias\n"
         "/meusgastos — resumo por usuário\n"
         "/tabela — lista completa de gastos do mês\n"
@@ -279,6 +280,40 @@ async def cmd_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         "💾 _Dados salvos no Supabase_"
     )
     await update.message.reply_text(msg, parse_mode="Markdown")
+
+
+async def cmd_painel(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    hoje = agora_br().strftime("%d/%m/%Y %H:%M")
+    teclado = InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton("📊 Resumo",        callback_data="painel:resumo"),
+            InlineKeyboardButton("📋 Tabela",         callback_data="painel:tabela"),
+        ],
+        [
+            InlineKeyboardButton("👤 Meus Gastos",    callback_data="painel:meusgastos"),
+            InlineKeyboardButton("🗂 Histórico",      callback_data="painel:historico"),
+        ],
+        [
+            InlineKeyboardButton("💰 Orçamento",      callback_data="painel:orcamento"),
+            InlineKeyboardButton("🔁 Recorrentes",    callback_data="painel:recorrentes"),
+        ],
+        [
+            InlineKeyboardButton("➕ Nova Categoria",  callback_data="painel:nova_categoria"),
+            InlineKeyboardButton("✏️ Renomear Cat.",  callback_data="painel:alterar_categoria"),
+        ],
+        [
+            InlineKeyboardButton("💲 Alterar Limite", callback_data="painel:alterar_valor"),
+            InlineKeyboardButton("🗑 Deletar",        callback_data="painel:deletar"),
+        ],
+        [
+            InlineKeyboardButton("↩️ Desfazer último", callback_data="painel:desfazer"),
+        ],
+    ])
+    await update.message.reply_text(
+        f"🎛 *Painel de Controle*\n_{hoje}_\n\nEscolha uma opção:",
+        parse_mode="Markdown",
+        reply_markup=teclado
+    )
 
 async def cmd_resumo(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     try:
@@ -731,6 +766,190 @@ async def handle_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     await query.answer()
 
     # callbacks de alterar categoria/valor são tratados pelo ConversationHandler
+    if query.data.startswith("painel:"):
+        acao = query.data.split(":")[1]
+        await query.answer()
+
+        # para ações que abrem conversa, avisa o usuário para usar o comando
+        if acao in ("nova_categoria", "alterar_categoria", "alterar_valor"):
+            cmds = {
+                "nova_categoria":    "/nova\\_categoria",
+                "alterar_categoria": "/alterar\\_categoria",
+                "alterar_valor":     "/alterar\\_valor",
+            }
+            await query.edit_message_text(
+                f"Use o comando {cmds[acao]} para continuar.",
+                parse_mode="Markdown"
+            )
+            return
+
+        # ações diretas — chama o handler correspondente simulando update
+        if acao == "resumo":
+            try:
+                gastos = buscar_gastos_mes()
+                await query.edit_message_text(formatar_resumo(gastos), parse_mode="Markdown")
+            except Exception as e:
+                await query.edit_message_text(f"❌ Erro:\n`{e}`", parse_mode="Markdown")
+
+        elif acao == "tabela":
+            try:
+                gastos = buscar_gastos_mes()
+                hoje = agora_br().strftime("%d/%m/%Y")
+                todos = [
+                    {**r, "categoria": cat}
+                    for cat, regs in gastos.items()
+                    for r in regs
+                ]
+                if not todos:
+                    await query.edit_message_text("Nenhum lançamento este mês ainda.")
+                    return
+                linhas = [f"📋 *Tabela de gastos — {hoje}*\n"]
+                for cat, limite in ORCAMENTO.items():
+                    regs = gastos.get(cat, [])
+                    if not regs:
+                        continue
+                    total_cat = sum(r["valor"] for r in regs)
+                    linhas.append(f"\n*{cat.capitalize()}* — Total: {fmt_brl(total_cat)}")
+                    linhas.append("─" * 20)
+                    for r in regs:
+                        partes_data = r["data"].split(" ") if r.get("data") else ["?","?"]
+                        dt = partes_data[0] if len(partes_data)>0 else "?"
+                        hr = partes_data[1] if len(partes_data)>1 else "?"
+                        desc_txt = r["desc"] if r.get("desc") else "—"
+                        linhas.append(f"`{dt}` | `{hr}` | {fmt_brl(r['valor'])} | {desc_txt} | _{r['autor']}_")
+                total_geral = sum(r["valor"] for r in todos)
+                linhas.append(f"\n{'─'*20}")
+                linhas.append(f"💰 *Total gasto: {fmt_brl(total_geral)}*")
+                await query.edit_message_text("\n".join(linhas), parse_mode="Markdown")
+            except Exception as e:
+                await query.edit_message_text(f"❌ Erro:\n`{e}`", parse_mode="Markdown")
+
+        elif acao == "meusgastos":
+            try:
+                gastos = buscar_gastos_mes()
+                hoje = agora_br().strftime("%d/%m/%Y")
+                por_autor = {}
+                for cat, regs in gastos.items():
+                    for r in regs:
+                        autor = r["autor"]
+                        if autor not in por_autor:
+                            por_autor[autor] = {"total": 0, "cats": {}}
+                        por_autor[autor]["total"] += r["valor"]
+                        por_autor[autor]["cats"][cat] = por_autor[autor]["cats"].get(cat, 0) + r["valor"]
+                if not por_autor:
+                    await query.edit_message_text("Nenhum lançamento este mês ainda.")
+                    return
+                total_geral = sum(r["valor"] for regs in gastos.values() for r in regs)
+                linhas = [f"👤 *Gastos por usuário — {hoje}*\n"]
+                for autor, info in sorted(por_autor.items()):
+                    pct = info["total"] / total_geral * 100 if total_geral else 0
+                    linhas.append(f"*{autor}* — {fmt_brl(info['total'])} ({pct:.0f}% do total)")
+                    for cat, val in sorted(info["cats"].items(), key=lambda x: -x[1]):
+                        pct_cat = val / info["total"] * 100 if info["total"] else 0
+                        linhas.append(f"   • {cat.capitalize()}: {fmt_brl(val)} ({pct_cat:.0f}%)")
+                    linhas.append("")
+                linhas.append(f"{'─'*20}")
+                linhas.append(f"💰 *Total geral: {fmt_brl(total_geral)}*")
+                await query.edit_message_text("\n".join(linhas), parse_mode="Markdown")
+            except Exception as e:
+                await query.edit_message_text(f"❌ Erro:\n`{e}`", parse_mode="Markdown")
+
+        elif acao == "historico":
+            try:
+                gastos = buscar_gastos_mes()
+                todos = []
+                for cat, regs in gastos.items():
+                    for r in regs:
+                        todos.append({**r, "categoria": cat})
+                if not todos:
+                    await query.edit_message_text("Nenhum lançamento este mês ainda.")
+                    return
+                hoje = agora_br().strftime("%d/%m/%Y")
+                ultimos = todos[-10:]
+                ultimos.reverse()
+                linhas = [f"🗂 *Últimos lançamentos — {hoje}*\n"]
+                for r in ultimos:
+                    partes_data = r["data"].split(" ") if r.get("data") else ["?","?"]
+                    dt = partes_data[0] if len(partes_data)>0 else "?"
+                    hr = partes_data[1] if len(partes_data)>1 else "?"
+                    desc_txt = r["desc"] if r.get("desc") else "—"
+                    linhas.append(f"`{dt}` | `{hr}` | *{r['categoria'].capitalize()}* | {fmt_brl(r['valor'])} | {desc_txt} | _{r['autor']}_")
+                await query.edit_message_text("\n".join(linhas), parse_mode="Markdown")
+            except Exception as e:
+                await query.edit_message_text(f"❌ Erro:\n`{e}`", parse_mode="Markdown")
+
+        elif acao == "orcamento":
+            hoje = agora_br().strftime("%d/%m/%Y")
+            linhas = [f"💰 *Orçamento Mensal — {hoje}*\n"]
+            for cat, valor in ORCAMENTO.items():
+                linhas.append(f"• *{cat.capitalize()}:* {fmt_brl(valor)}")
+            linhas.append(f"\n*Total:* {fmt_brl(sum(ORCAMENTO.values()))}")
+            await query.edit_message_text("\n".join(linhas), parse_mode="Markdown")
+
+        elif acao == "recorrentes":
+            try:
+                registros = buscar_recorrentes()
+                if not registros:
+                    await query.edit_message_text("Nenhum lançamento recorrente cadastrado.")
+                    return
+                hoje = agora_br().strftime("%d/%m/%Y")
+                linhas = [f"🔁 *Lançamentos recorrentes — {hoje}*\n"]
+                for r in registros:
+                    cat  = r.get("categoria","?").capitalize()
+                    val  = float(r.get("valor",0))
+                    desc = r.get("descricao","")
+                    dia  = r.get("dia","?")
+                    linha = f"• Todo dia *{dia}* — {cat} {fmt_brl(val)}"
+                    if desc:
+                        linha += f" — {desc}"
+                    linhas.append(linha)
+                await query.edit_message_text("\n".join(linhas), parse_mode="Markdown")
+            except Exception as e:
+                await query.edit_message_text(f"❌ Erro:\n`{e}`", parse_mode="Markdown")
+
+        elif acao == "deletar":
+            try:
+                registros = buscar_todos_mes()
+                if not registros:
+                    await query.edit_message_text("Nenhum lançamento este mês para deletar.")
+                    return
+                botoes = []
+                for i, reg in enumerate(registros[:20], start=1):
+                    cat   = reg.get("categoria","?").capitalize()
+                    val   = float(reg.get("valor",0))
+                    desc  = reg.get("descricao","")
+                    data  = reg.get("data","")
+                    autor = reg.get("autor","")
+                    partes_data = data.split(" ") if data else ["?","?"]
+                    dt = partes_data[0] if len(partes_data)>0 else "?"
+                    hr = partes_data[1] if len(partes_data)>1 else "?"
+                    desc_txt = desc if desc else "—"
+                    label = f"#{i} {dt} | {hr} | {cat} | {fmt_brl(val)} | {desc_txt} | {autor}"
+                    botoes.append([InlineKeyboardButton(label, callback_data=f"del:{reg['id']}")])
+                botoes.append([InlineKeyboardButton("❌ Cancelar", callback_data="del:cancelar")])
+                await query.edit_message_text(
+                    "🗑 *Selecione o lançamento para deletar:*",
+                    parse_mode="Markdown",
+                    reply_markup=InlineKeyboardMarkup(botoes)
+                )
+            except Exception as e:
+                await query.edit_message_text(f"❌ Erro:\n`{e}`", parse_mode="Markdown")
+
+        elif acao == "desfazer":
+            try:
+                removido = remover_ultimo()
+                if not removido:
+                    await query.edit_message_text("Nenhum lançamento para desfazer.")
+                    return
+                await query.edit_message_text(
+                    f"↩️ Removido:\n*{removido['categoria'].capitalize()}* — {fmt_brl(float(removido['valor']))}"
+                    + (f" — {removido['descricao']}" if removido.get('descricao') else ""),
+                    parse_mode="Markdown"
+                )
+            except Exception as e:
+                await query.edit_message_text(f"❌ Erro:\n`{e}`", parse_mode="Markdown")
+        return
+
     if query.data.startswith("rec:"):
         partes = query.data.split(":")
         acao = partes[1]
@@ -870,6 +1089,7 @@ def main():
     )
 
     app.add_handler(CommandHandler("start",      cmd_start))
+    app.add_handler(CommandHandler("painel",     cmd_painel))
     app.add_handler(CommandHandler("resumo",     cmd_resumo))
     app.add_handler(CommandHandler("orcamento",  cmd_orcamento))
     app.add_handler(CommandHandler("historico",  cmd_historico))
@@ -884,7 +1104,7 @@ def main():
     app.add_handler(CallbackQueryHandler(handle_callback))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, processar_gasto))
 
-    print("Bot rodando v13...")
+    print("Bot rodando v14...")
     app.run_polling()
 
 if __name__ == "__main__":
