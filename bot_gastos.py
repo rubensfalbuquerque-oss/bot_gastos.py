@@ -20,7 +20,7 @@ from telegram.ext import (
 
 TOKEN          = "8798424595:AAFMfBeoYmSXyBH3vEQ0sq2UPxNSvc0scRU"
 SUPABASE_URL   = "https://ahdwgcsqugqwhjgatpea.supabase.co"
-SUPABASE_KEY   = "sb_publishable_BLUd8c8T15zN0Ahhld2Rwg_NNiZ6nP0"
+SUPABASE_KEY   = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFoZHdnY3NxdWdxd2hqZ2F0cGVhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg1MzM3NDQsImV4cCI6MjA5NDEwOTc0NH0.-I1_Blm7pX0ehJHGVmLHvyOTGb-f0iEHF8e4Uiesr-Q"
 
 ORCAMENTO = {
     "mercado":     1200.00,
@@ -409,7 +409,7 @@ def main():
     app.add_handler(CommandHandler("desfazer",  cmd_desfazer))
     app.add_handler(CallbackQueryHandler(handle_callback))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, processar_gasto))
-    print("Bot rodando v2...")
+    print("Bot rodando...")
     app.run_polling()
 
 if __name__ == "__main__":
