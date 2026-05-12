@@ -529,6 +529,30 @@ async def cmd_recorrentes(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"❌ Erro:\n`{e}`", parse_mode="Markdown")
 
 
+
+# ──────────────────────────────────────────
+# LANÇAMENTO VIA PAINEL
+# ──────────────────────────────────────────
+
+async def cmd_lancar(update, ctx: ContextTypes.DEFAULT_TYPE):
+    msg = update.message if hasattr(update, "message") and update.message else update
+    cats = list(ORCAMENTO.keys())
+    botoes = []
+    linha = []
+    for c in cats:
+        linha.append(InlineKeyboardButton(c.capitalize(), callback_data=f"lanc_cat:{c}"))
+        if len(linha) == 2:
+            botoes.append(linha)
+            linha = []
+    if linha:
+        botoes.append(linha)
+    botoes.append([InlineKeyboardButton("❌ Cancelar", callback_data="lanc_cat:cancelar")])
+    await msg.reply_text(
+        "💸 *Novo lançamento*\n\nEscolha a categoria:",
+        parse_mode="Markdown",
+        reply_markup=InlineKeyboardMarkup(botoes)
+    )
+
 async def cmd_remover_categoria(update, ctx: ContextTypes.DEFAULT_TYPE):
     msg = update.message if hasattr(update, "message") and update.message else update
     cats = list(ORCAMENTO.keys())
@@ -769,10 +793,83 @@ ATALHOS = {
     "alterar categoria":  cmd_alterar_categoria,
     "alterar valor":      cmd_alterar_valor,
     "remover categoria":  cmd_remover_categoria,
+    "lancar":             cmd_lancar,
 }
 
 async def processar_gasto(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     texto = update.message.text.strip()
+
+    # verifica se está em fluxo de lançamento via painel
+    chat_id = update.message.chat_id
+    lanc_dados = ctx.bot_data.get(f"lanc_{chat_id}")
+    if lanc_dados:
+        etapa = lanc_dados.get("etapa")
+        if etapa == "valor":
+            val_raw = texto.replace(",", ".")
+            try:
+                valor = float(val_raw)
+                if valor <= 0:
+                    raise ValueError
+                lanc_dados["valor"] = valor
+                lanc_dados["etapa"] = "descricao"
+                ctx.bot_data[f"lanc_{chat_id}"] = lanc_dados
+                await update.message.reply_text(
+                    f"📝 Valor: *{fmt_brl(valor)}*\n\nDigite a descrição (ou envie `-` para pular):",
+                    parse_mode="Markdown"
+                )
+            except ValueError:
+                await update.message.reply_text("❌ Valor inválido. Digite um número positivo. Ex: `87.50`", parse_mode="Markdown")
+            return
+        elif etapa == "descricao":
+            descricao = "" if texto.strip() == "-" else texto.strip()
+            lanc_dados["descricao"] = descricao
+            del ctx.bot_data[f"lanc_{chat_id}"]
+            categoria = lanc_dados["categoria"]
+            valor = lanc_dados["valor"]
+            autor = update.message.from_user.first_name or "Desconhecido"
+
+            try:
+                gastos = buscar_gastos_mes()
+                gasto_atual = sum(r["valor"] for r in gastos.get(categoria, []))
+            except Exception:
+                gasto_atual = 0
+
+            limite = ORCAMENTO.get(categoria, 0)
+            saldo_apos = limite - gasto_atual - valor
+            emoji = emoji_status(gasto_atual + valor, limite)
+            desc_txt = f"\n📝 *Descrição:* {descricao}" if descricao else ""
+            alerta = ""
+            if saldo_apos < 0:
+                alerta = f"\n⚠️ *Isso vai estourar o limite em {fmt_brl(abs(saldo_apos))}!*"
+            elif limite > 0 and saldo_apos / limite <= 0.20:
+                alerta = f"\n⚠️ Após este lançamento restam {fmt_brl(saldo_apos)} nesta categoria."
+
+            pending_key = f"pending_{update.message.from_user.id}"
+            ctx.bot_data[pending_key] = {
+                "categoria": categoria,
+                "valor": valor,
+                "descricao": descricao,
+                "autor": autor,
+            }
+
+            teclado = InlineKeyboardMarkup([[
+                InlineKeyboardButton("✅ Confirmar", callback_data=f"confirm:{pending_key}"),
+                InlineKeyboardButton("❌ Cancelar",  callback_data=f"cancel:{pending_key}"),
+            ]])
+
+            await update.message.reply_text(
+                f"📋 *Confirmar lançamento?*\n\n"
+                f"📅 *Data:* {data_hora()}\n"
+                f"👤 *Quem:* {autor}\n"
+                f"🏷 *Categoria:* {categoria.capitalize()}\n"
+                f"💰 *Valor:* {fmt_brl(valor)}"
+                f"{desc_txt}\n\n"
+                f"{emoji} Saldo após: {fmt_brl(saldo_apos)} de {fmt_brl(limite)}"
+                f"{alerta}",
+                parse_mode="Markdown",
+                reply_markup=teclado
+            )
+            return
 
     # verifica se está aguardando novo nome de categoria
     chat_id = update.message.chat_id
@@ -924,7 +1021,11 @@ async def handle_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await query.answer()
 
         # para ações que abrem conversa, inicia direto
-        if acao == "nova_categoria":
+        if acao == "lancar":
+            await query.answer()
+            await cmd_lancar(query.message, ctx)
+            return
+        elif acao == "nova_categoria":
             await query.answer()
             await cmd_nova_categoria(query, ctx)
             return
@@ -1108,6 +1209,45 @@ async def handle_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 )
             except Exception as e:
                 await query.edit_message_text(f"❌ Erro:\n`{e}`", parse_mode="Markdown")
+        return
+
+    if query.data.startswith("lanc_cat:"):
+        cat = query.data.split(":")[1]
+        if cat == "cancelar":
+            await query.edit_message_text("❌ Lançamento cancelado.")
+            await enviar_painel(query.message, ctx)
+            return
+        chat_id = query.message.chat_id
+        ctx.bot_data[f"lanc_{chat_id}"] = {"categoria": cat, "etapa": "valor"}
+        await query.message.reply_text(
+            f"💸 *{cat.capitalize()}*\n\nDigite o valor em R$:",
+            parse_mode="Markdown"
+        )
+        return
+
+    if query.data.startswith("lanc_rec:"):
+        partes = query.data.split(":")
+        resposta = partes[1]
+        chat_id = query.message.chat_id
+        dados = ctx.bot_data.pop(f"lanc_confirm_{chat_id}", None)
+        if not dados:
+            await query.edit_message_text("⚠️ Dados expirados. Tente novamente.")
+            return
+        if resposta == "sim":
+            dia = agora_br().strftime("%d")
+            try:
+                salvar_recorrente(dados["categoria"], dados["valor"], dados["descricao"], dia)
+                await query.edit_message_text(
+                    f"🔁 Recorrente salvo! Todo dia *{dia}* — {dados['categoria'].capitalize()} {fmt_brl(dados['valor'])}",
+                    parse_mode="Markdown"
+                )
+            except Exception as e:
+                await query.edit_message_text(f"❌ Erro ao salvar recorrente:\n`{e}`", parse_mode="Markdown")
+        else:
+            await query.edit_message_text("👍 Lançamento avulso registrado.")
+        gastos = buscar_gastos_mes()
+        await query.message.reply_text(formatar_resumo(gastos), parse_mode="Markdown")
+        await enviar_painel(query.message, ctx)
         return
 
     if query.data.startswith("remcat:"):
@@ -1309,6 +1449,7 @@ def main():
     app.add_handler(CommandHandler("meusgastos", cmd_meusgastos))
     app.add_handler(CommandHandler("deletar",    cmd_deletar))
     app.add_handler(CommandHandler("recorrentes", cmd_recorrentes))
+    app.add_handler(CommandHandler("lancar",           cmd_lancar))
     app.add_handler(CommandHandler("remover_categoria", cmd_remover_categoria))
     app.add_handler(CommandHandler("desfazer",   cmd_desfazer))
     app.add_handler(conv_nova_categoria)
@@ -1317,7 +1458,7 @@ def main():
     app.add_handler(CallbackQueryHandler(handle_callback))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, processar_gasto))
 
-    print("Bot rodando v29...")
+    print("Bot rodando v30...")
     app.run_polling(drop_pending_updates=True)
 
 if __name__ == "__main__":
