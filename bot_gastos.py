@@ -670,9 +670,25 @@ async def cb_alterar_valor(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     await query.answer()
     cat = query.data.split(":")[1]
     ctx.user_data["cat_valor"] = cat
-    await query.edit_message_text(
-        f"💰 Limite atual de *{cat.capitalize()}*: {fmt_brl(ORCAMENTO[cat])}\n\nDigite o novo valor:",
-        parse_mode="Markdown"
+    atual = ORCAMENTO[cat]
+
+    # botões com valores sugeridos
+    sugestoes = [200, 300, 400, 500, 600, 800, 1000, 1200, 1500, 2000, 2500, 3000]
+    botoes = []
+    linha = []
+    for s in sugestoes:
+        linha.append(InlineKeyboardButton(fmt_brl(s), callback_data=f"altval_confirm:{cat}:{s}"))
+        if len(linha) == 3:
+            botoes.append(linha)
+            linha = []
+    if linha:
+        botoes.append(linha)
+    botoes.append([InlineKeyboardButton("❌ Cancelar", callback_data="altval_confirm:cancelar:0")])
+
+    await query.message.reply_text(
+        f"💰 Limite atual de *{cat.capitalize()}*: {fmt_brl(atual)}\n\nEscolha o novo valor:",
+        parse_mode="Markdown",
+        reply_markup=InlineKeyboardMarkup(botoes)
     )
     return AGUARDA_NOVO_VALOR
 
@@ -1013,6 +1029,28 @@ async def handle_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 await query.edit_message_text(f"❌ Erro:\n`{e}`", parse_mode="Markdown")
         return
 
+    if query.data.startswith("altval_confirm:"):
+        partes = query.data.split(":")
+        cat = partes[1]
+        if cat == "cancelar":
+            await query.edit_message_text("❌ Operação cancelada.")
+            return
+        novo_valor = float(partes[2])
+        antigo = ORCAMENTO.get(cat, 0)
+        ORCAMENTO[cat] = novo_valor
+        await query.edit_message_text(
+            f"✅ Limite de *{cat.capitalize()}* alterado de {fmt_brl(antigo)} para {fmt_brl(novo_valor)}!",
+            parse_mode="Markdown"
+        )
+        hoje = agora_br().strftime("%d/%m/%Y")
+        linhas = [f"💰 *Orçamento Mensal atualizado — {hoje}*\n"]
+        for c, v in ORCAMENTO.items():
+            linhas.append(f"• *{c.capitalize()}:* {fmt_brl(v)}")
+        linhas.append(f"\n*Total:* {fmt_brl(sum(ORCAMENTO.values()))}")
+        await query.message.reply_text("\n".join(linhas), parse_mode="Markdown")
+        await enviar_painel(query.message, ctx)
+        return
+
     if query.data.startswith("rec:"):
         partes = query.data.split(":")
         acao = partes[1]
@@ -1166,7 +1204,7 @@ def main():
     app.add_handler(CallbackQueryHandler(handle_callback))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, processar_gasto))
 
-    print("Bot rodando v24...")
+    print("Bot rodando v25...")
     app.run_polling()
 
 if __name__ == "__main__":
