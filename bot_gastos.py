@@ -273,6 +273,7 @@ async def cmd_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         "/nova\\_categoria — criar uma nova categoria\n"
         "/alterar\\_categoria — renomear uma categoria\n"
         "/alterar\\_valor — mudar o limite de uma categoria\n"
+        "/remover\\_categoria — remover uma categoria\n"
         "/deletar — escolher e deletar qualquer lançamento\n"
         "/recorrentes — ver lançamentos recorrentes\n"
         "/desfazer — remove o último lançamento\n\n"
@@ -304,6 +305,9 @@ async def enviar_painel(update_or_message, ctx):
             InlineKeyboardButton("✏️ Renomear Cat.",  callback_data="painel:alterar_categoria"),
         ],
         [
+            InlineKeyboardButton("🗑 Remover Cat.",    callback_data="painel:remover_categoria"),
+        ],
+        [
             InlineKeyboardButton("💲 Alterar Limite", callback_data="painel:alterar_valor"),
             InlineKeyboardButton("↩️ Desfazer",       callback_data="painel:desfazer"),
         ],
@@ -333,6 +337,9 @@ async def cmd_painel(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         [
             InlineKeyboardButton("➕ Nova Categoria",  callback_data="painel:nova_categoria"),
             InlineKeyboardButton("✏️ Renomear Cat.",  callback_data="painel:alterar_categoria"),
+        ],
+        [
+            InlineKeyboardButton("🗑 Remover Cat.",    callback_data="painel:remover_categoria"),
         ],
         [
             InlineKeyboardButton("💲 Alterar Limite", callback_data="painel:alterar_valor"),
@@ -520,6 +527,20 @@ async def cmd_recorrentes(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("\n".join(linhas), parse_mode="Markdown")
     except Exception as e:
         await update.message.reply_text(f"❌ Erro:\n`{e}`", parse_mode="Markdown")
+
+
+async def cmd_remover_categoria(update, ctx: ContextTypes.DEFAULT_TYPE):
+    msg = update.message if hasattr(update, "message") and update.message else update
+    cats = list(ORCAMENTO.keys())
+    teclado = InlineKeyboardMarkup([
+        [InlineKeyboardButton(f"🗑 {c.capitalize()}", callback_data=f"remcat:{c}")]
+        for c in cats
+    ])
+    await msg.reply_text(
+        "🗑 *Qual categoria quer remover?*\n\n⚠️ Os lançamentos desta categoria não serão apagados.",
+        parse_mode="Markdown",
+        reply_markup=teclado
+    )
 
 async def cmd_desfazer(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     try:
@@ -747,6 +768,7 @@ ATALHOS = {
     "nova categoria":     cmd_nova_categoria,
     "alterar categoria":  cmd_alterar_categoria,
     "alterar valor":      cmd_alterar_valor,
+    "remover categoria":  cmd_remover_categoria,
 }
 
 async def processar_gasto(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
@@ -913,6 +935,10 @@ async def handle_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         elif acao == "alterar_valor":
             await query.answer()
             await cmd_alterar_valor(query, ctx)
+            return
+        elif acao == "remover_categoria":
+            await query.answer()
+            await cmd_remover_categoria(query.message, ctx)
             return
 
         # ações diretas — chama o handler correspondente simulando update
@@ -1084,6 +1110,37 @@ async def handle_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 await query.edit_message_text(f"❌ Erro:\n`{e}`", parse_mode="Markdown")
         return
 
+    if query.data.startswith("remcat:"):
+        cat = query.data.split(":")[1]
+        teclado = InlineKeyboardMarkup([[
+            InlineKeyboardButton("✅ Confirmar remoção", callback_data=f"remcat_confirm:{cat}"),
+            InlineKeyboardButton("❌ Cancelar", callback_data="remcat_confirm:cancelar"),
+        ]])
+        await query.message.reply_text(
+            f"⚠️ Tem certeza que quer remover a categoria *{cat.capitalize()}*?",
+            parse_mode="Markdown",
+            reply_markup=teclado
+        )
+        return
+
+    if query.data.startswith("remcat_confirm:"):
+        cat = query.data.split(":")[1]
+        if cat == "cancelar":
+            await query.edit_message_text("❌ Remoção cancelada.")
+            await enviar_painel(query.message, ctx)
+            return
+        if cat in ORCAMENTO:
+            del ORCAMENTO[cat]
+            for alias, c in list(ALIASES.items()):
+                if c == cat:
+                    del ALIASES[alias]
+        await query.edit_message_text(
+            f"✅ Categoria *{cat.capitalize()}* removida!",
+            parse_mode="Markdown"
+        )
+        await enviar_painel(query.message, ctx)
+        return
+
     if query.data.startswith("altval_confirm:"):
         partes = query.data.split(":")
         cat = partes[1]
@@ -1252,6 +1309,7 @@ def main():
     app.add_handler(CommandHandler("meusgastos", cmd_meusgastos))
     app.add_handler(CommandHandler("deletar",    cmd_deletar))
     app.add_handler(CommandHandler("recorrentes", cmd_recorrentes))
+    app.add_handler(CommandHandler("remover_categoria", cmd_remover_categoria))
     app.add_handler(CommandHandler("desfazer",   cmd_desfazer))
     app.add_handler(conv_nova_categoria)
     app.add_handler(conv_categoria)
@@ -1259,7 +1317,7 @@ def main():
     app.add_handler(CallbackQueryHandler(handle_callback))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, processar_gasto))
 
-    print("Bot rodando v28...")
+    print("Bot rodando v29...")
     app.run_polling(drop_pending_updates=True)
 
 if __name__ == "__main__":
