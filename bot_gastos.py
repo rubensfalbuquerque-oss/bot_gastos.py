@@ -24,7 +24,7 @@ def fmt_brl(valor):
     """Formata valor em reais com vírgula: R$ 1.200,00"""
     return f"R$ {valor:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
 
-TOKEN          = "8798424595:AAHzGiivFjFprP6OvpBhEY-eplDJhF0yzbI"
+TOKEN          = "8798424595:AAEBbxBZ5d6n3GusSwPQK3IGeomdx7oyJZA"
 SUPABASE_URL   = "https://ahdwgcsqugqwhjgatpea.supabase.co"
 SUPABASE_KEY   = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFoZHdnY3NxdWdxd2hqZ2F0cGVhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg1MzM3NDQsImV4cCI6MjA5NDEwOTc0NH0.-I1_Blm7pX0ehJHGVmLHvyOTGb-f0iEHF8e4Uiesr-Q"
 
@@ -1479,7 +1479,7 @@ def main():
     app.add_handler(CallbackQueryHandler(handle_callback))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, processar_gasto))
 
-    print("Bot rodando v33...")
+    print("Bot rodando v34...")
     app.run_polling(drop_pending_updates=True)
 
 if __name__ == "__main__":
