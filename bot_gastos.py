@@ -24,7 +24,7 @@ def fmt_brl(valor):
     """Formata valor em reais com vírgula: R$ 1.200,00"""
     return f"R$ {valor:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
 
-TOKEN          = "8798424595:AAEAqF9KB18pmCNGciuXn7zxaWuTIYIDcio"
+TOKEN          = "8798424595:AAHzGiivFjFprP6OvpBhEY-eplDJhF0yzbI"
 SUPABASE_URL   = "https://ahdwgcsqugqwhjgatpea.supabase.co"
 SUPABASE_KEY   = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFoZHdnY3NxdWdxd2hqZ2F0cGVhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg1MzM3NDQsImV4cCI6MjA5NDEwOTc0NH0.-I1_Blm7pX0ehJHGVmLHvyOTGb-f0iEHF8e4Uiesr-Q"
 
@@ -618,8 +618,9 @@ async def cb_alterar_categoria(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     cat = query.data.split(":")[1]
-    ctx.user_data["cat_renomear"] = cat
-    await query.edit_message_text(
+    chat_id = query.message.chat_id
+    ctx.bot_data[f"aguarda_rename_{chat_id}"] = cat
+    await query.message.reply_text(
         f"✏️ Renomeando *{cat.capitalize()}*.\n\nDigite o novo nome:",
         parse_mode="Markdown"
     )
@@ -751,8 +752,32 @@ ATALHOS = {
 async def processar_gasto(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     texto = update.message.text.strip()
 
-    # verifica se está aguardando novo valor de categoria
+    # verifica se está aguardando novo nome de categoria
     chat_id = update.message.chat_id
+    pending_rename = ctx.bot_data.get(f"aguarda_rename_{chat_id}")
+    if pending_rename:
+        novo_nome = texto.strip().lower()
+        if novo_nome in ORCAMENTO and novo_nome != pending_rename:
+            await update.message.reply_text(
+                f"❌ Já existe uma categoria chamada *{novo_nome.capitalize()}*. Digite outro nome.",
+                parse_mode="Markdown"
+            )
+            return
+        valor = ORCAMENTO.pop(pending_rename)
+        ORCAMENTO[novo_nome] = valor
+        for alias, cat in list(ALIASES.items()):
+            if cat == pending_rename:
+                ALIASES[alias] = novo_nome
+        ALIASES[novo_nome] = novo_nome
+        del ctx.bot_data[f"aguarda_rename_{chat_id}"]
+        await update.message.reply_text(
+            f"✅ Categoria *{pending_rename.capitalize()}* renomeada para *{novo_nome.capitalize()}*!",
+            parse_mode="Markdown"
+        )
+        await enviar_painel(update.message, ctx)
+        return
+
+    # verifica se está aguardando novo valor de categoria
     pending_cat = ctx.bot_data.get(f"aguarda_valor_{chat_id}")
     if pending_cat:
         val_raw = texto.replace(",", ".")
@@ -1234,8 +1259,8 @@ def main():
     app.add_handler(CallbackQueryHandler(handle_callback))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, processar_gasto))
 
-    print("Bot rodando v27...")
-    app.run_polling()
+    print("Bot rodando v28...")
+    app.run_polling(drop_pending_updates=True)
 
 if __name__ == "__main__":
     main()
