@@ -158,6 +158,26 @@ def deletar_por_id(id_registro):
         params={"id": f"eq.{id_registro}"},
     ).raise_for_status()
 
+
+def buscar_recorrentes():
+    r = httpx.get(
+        f"{SUPABASE_URL}/rest/v1/recorrentes",
+        headers=HEADERS,
+        params={"order": "dia.asc"},
+    )
+    r.raise_for_status()
+    return r.json()
+
+def salvar_recorrente(categoria, valor, descricao, dia):
+    payload = {
+        "categoria": categoria,
+        "valor": valor,
+        "descricao": descricao,
+        "dia": int(dia),
+    }
+    r = httpx.post(f"{SUPABASE_URL}/rest/v1/recorrentes", headers=HEADERS, json=payload)
+    r.raise_for_status()
+
 # ──────────────────────────────────────────
 # FORMATAÇÃO
 # ──────────────────────────────────────────
@@ -248,6 +268,7 @@ async def cmd_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         "/alterar\\_categoria — renomear uma categoria\n"
         "/alterar\\_valor — mudar o limite de uma categoria\n"
         "/deletar — escolher e deletar qualquer lançamento\n"
+        "/recorrentes — ver lançamentos recorrentes\n"
         "/desfazer — remove o último lançamento\n\n"
         "💾 _Dados salvos no Supabase_"
     )
@@ -394,6 +415,28 @@ async def cmd_deletar(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             parse_mode="Markdown",
             reply_markup=teclado
         )
+    except Exception as e:
+        await update.message.reply_text(f"❌ Erro:\n`{e}`", parse_mode="Markdown")
+
+
+async def cmd_recorrentes(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    try:
+        registros = buscar_recorrentes()
+        if not registros:
+            await update.message.reply_text("Nenhum lançamento recorrente cadastrado.")
+            return
+        hoje = datetime.now().strftime("%d/%m/%Y")
+        linhas = [f"🔁 *Lançamentos recorrentes — {hoje}*\n"]
+        for r in registros:
+            cat  = r.get("categoria", "?").capitalize()
+            val  = float(r.get("valor", 0))
+            desc = r.get("descricao", "")
+            dia  = r.get("dia", "?")
+            linha = f"• Todo dia *{dia}* — {cat} {fmt_brl(val)}"
+            if desc:
+                linha += f" — {desc}"
+            linhas.append(linha)
+        await update.message.reply_text("\n".join(linhas), parse_mode="Markdown")
     except Exception as e:
         await update.message.reply_text(f"❌ Erro:\n`{e}`", parse_mode="Markdown")
 
@@ -673,6 +716,26 @@ async def handle_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     await query.answer()
 
     # callbacks de alterar categoria/valor são tratados pelo ConversationHandler
+    if query.data.startswith("rec:"):
+        partes = query.data.split(":")
+        acao = partes[1]
+        if acao == "nao":
+            await query.edit_message_text("👍 Ok, lançamento avulso registrado.")
+            return
+        # rec:sim:categoria:valor:descricao:dia
+        _, _, cat, val, desc, dia = partes
+        try:
+            salvar_recorrente(cat, float(val), desc, dia)
+            await query.edit_message_text(
+                f"🔁 *Recorrente salvo!*\n"
+                f"Todo dia *{dia}* será lembrado: {cat.capitalize()} {fmt_brl(float(val))}"
+                + (f" — {desc}" if desc else ""),
+                parse_mode="Markdown"
+            )
+        except Exception as e:
+            await query.edit_message_text(f"❌ Erro ao salvar recorrente:\n`{e}`", parse_mode="Markdown")
+        return
+
     if query.data.startswith("novacat:"):
         acao = query.data.split(":")[1]
         if acao == "cancelar":
@@ -744,6 +807,18 @@ async def handle_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         )
         # envia resumo completo logo após confirmação
         await query.message.reply_text(formatar_resumo(gastos), parse_mode="Markdown")
+
+        # pergunta se é recorrente
+        dia = datetime.now().strftime("%d")
+        teclado_rec = InlineKeyboardMarkup([[
+            InlineKeyboardButton(f"✅ Sim, todo dia {dia}", callback_data=f"rec:sim:{dados['categoria']}:{dados['valor']}:{dados['descricao']}:{dia}"),
+            InlineKeyboardButton("❌ Não", callback_data="rec:nao"),
+        ]])
+        await query.message.reply_text(
+            f"🔁 *Este lançamento se repete todo dia {dia} do mês?*",
+            parse_mode="Markdown",
+            reply_markup=teclado_rec
+        )
     except Exception as e:
         await query.edit_message_text(f"❌ Erro ao salvar:\n`{e}`", parse_mode="Markdown")
 
@@ -786,6 +861,7 @@ def main():
     app.add_handler(CommandHandler("tabela",     cmd_tabela))
     app.add_handler(CommandHandler("meusgastos", cmd_meusgastos))
     app.add_handler(CommandHandler("deletar",    cmd_deletar))
+    app.add_handler(CommandHandler("recorrentes", cmd_recorrentes))
     app.add_handler(CommandHandler("desfazer",   cmd_desfazer))
     app.add_handler(conv_nova_categoria)
     app.add_handler(conv_categoria)
@@ -793,7 +869,7 @@ def main():
     app.add_handler(CallbackQueryHandler(handle_callback))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, processar_gasto))
 
-    print("Bot rodando v11...")
+    print("Bot rodando v12...")
     app.run_polling()
 
 if __name__ == "__main__":
