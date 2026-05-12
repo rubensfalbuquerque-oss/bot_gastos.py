@@ -61,7 +61,7 @@ PALAVRAS_GATILHO = set(ALIASES.keys()) | {
 }
 
 # estados para ConversationHandler
-AGUARDA_NOVA_CATEGORIA, AGUARDA_NOVO_VALOR = range(2)
+AGUARDA_NOVA_CATEGORIA, AGUARDA_NOVO_VALOR, AGUARDA_NOME_CAT, AGUARDA_LIMITE_CAT = range(4)
 
 # ──────────────────────────────────────────
 # SUPABASE
@@ -183,17 +183,17 @@ def formatar_resumo(gastos):
         b = barra(gasto, limite)
         pct_cat = (gasto / limite * 100) if limite else 0
         linhas.append(
-            f"{emoji_status(gasto, limite)} *{cat.capitalize()}* — R$ {gasto:.0f}/{limite:.0f} ({pct_cat:.0f}%)\n"
+            f"{emoji_status(gasto, limite)} *{cat.capitalize()}* — {fmt_brl(gasto)}/{fmt_brl(limite)} ({pct_cat:.0f}%)\n"
             f"   `{b}`\n"
-            f"   Saldo: R$ {saldo:.2f}\n"
+            f"   Saldo: {fmt_brl(saldo)}\n"
         )
     saldo_total = total_orc - total_gasto
     pct_usado = (total_gasto / total_orc * 100) if total_orc else 0
     pct_saldo = 100 - pct_usado
     linhas.append(
         f"{'─'*28}\n"
-        f"{emoji_status(total_gasto, total_orc)} *TOTAL: R$ {total_gasto:.2f} / {total_orc:.2f}* ({pct_usado:.0f}% usado)\n"
-        f"Saldo geral: R$ {saldo_total:.2f} ({pct_saldo:.0f}% restante)"
+        f"{emoji_status(total_gasto, total_orc)} *TOTAL: {fmt_brl(total_gasto)} / {fmt_brl(total_orc)}* ({pct_usado:.0f}% usado)\n"
+        f"Saldo geral: {fmt_brl(saldo_total)} ({pct_saldo:.0f}% restante)"
     )
     return "\n".join(linhas)
 
@@ -239,6 +239,7 @@ async def cmd_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         "/tabela — lista completa de gastos do mês\n"
         "/historico — últimos 10 lançamentos\n"
         "/orcamento — limites configurados\n"
+        "/nova\\_categoria — criar uma nova categoria\n"
         "/alterar\\_categoria — renomear uma categoria\n"
         "/alterar\\_valor — mudar o limite de uma categoria\n"
         "/deletar — escolher e deletar qualquer lançamento\n"
@@ -258,8 +259,8 @@ async def cmd_orcamento(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     hoje = datetime.now().strftime("%d/%m/%Y")
     linhas = [f"💰 *Orçamento Mensal — {hoje}*\n"]
     for cat, valor in ORCAMENTO.items():
-        linhas.append(f"• *{cat.capitalize()}:* R$ {valor:.2f}")
-    linhas.append(f"\n*Total:* R$ {sum(ORCAMENTO.values()):.2f}")
+        linhas.append(f"• *{cat.capitalize()}:* {fmt_brl(valor)}")
+    linhas.append(f"\n*Total:* {fmt_brl(sum(ORCAMENTO.values()))}")
     await update.message.reply_text("\n".join(linhas), parse_mode="Markdown")
 
 async def cmd_historico(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
@@ -280,7 +281,7 @@ async def cmd_historico(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             desc = f" — {r['desc']}" if r.get("desc") else ""
             linhas.append(
                 f"`{r['data']}` *{r['categoria'].capitalize()}* "
-                f"R$ {r['valor']:.2f}{desc} _{r['autor']}_"
+                f"{fmt_brl(r['valor'])}{desc} _{r['autor']}_"
             )
         await update.message.reply_text("\n".join(linhas), parse_mode="Markdown")
     except Exception as e:
@@ -307,15 +308,15 @@ async def cmd_tabela(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             if not regs:
                 continue
             total_cat = sum(r["valor"] for r in regs)
-            linhas.append(f"\n*{cat.capitalize()}* — Total: R$ {total_cat:.2f}")
+            linhas.append(f"\n*{cat.capitalize()}* — Total: {fmt_brl(total_cat)}")
             linhas.append("─" * 20)
             for r in regs:
                 desc = f" — {r['desc']}" if r.get("desc") else ""
-                linhas.append(f"`{r['data']}` R$ {r['valor']:.2f}{desc} _{r['autor']}_")
+                linhas.append(f"`{r['data']}` {fmt_brl(r['valor'])}{desc} _{r['autor']}_")
 
         total_geral = sum(r["valor"] for r in todos)
         linhas.append(f"\n{'─' * 20}")
-        linhas.append(f"💰 *Total gasto: R$ {total_geral:.2f}*")
+        linhas.append(f"💰 *Total gasto: {fmt_brl(total_geral)}*")
 
         await update.message.reply_text("\n".join(linhas), parse_mode="Markdown")
     except Exception as e:
@@ -345,14 +346,14 @@ async def cmd_meusgastos(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
         for autor, info in sorted(por_autor.items()):
             pct = info["total"] / total_geral * 100 if total_geral else 0
-            linhas.append(f"*{autor}* — R$ {info['total']:.2f} ({pct:.0f}% do total)")
+            linhas.append(f"*{autor}* — {fmt_brl(info['total'])} ({pct:.0f}% do total)")
             for cat, val in sorted(info["cats"].items(), key=lambda x: -x[1]):
                 pct_cat = val / info["total"] * 100 if info["total"] else 0
-                linhas.append(f"   • {cat.capitalize()}: R$ {val:.2f} ({pct_cat:.0f}%)")
+                linhas.append(f"   • {cat.capitalize()}: {fmt_brl(val)} ({pct_cat:.0f}%)")
             linhas.append("")
 
         linhas.append(f"{'─'*20}")
-        linhas.append(f"💰 *Total geral: R$ {total_geral:.2f}*")
+        linhas.append(f"💰 *Total geral: {fmt_brl(total_geral)}*")
 
         await update.message.reply_text("\n".join(linhas), parse_mode="Markdown")
     except Exception as e:
@@ -398,12 +399,72 @@ async def cmd_desfazer(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("Nenhum lançamento para desfazer.")
             return
         await update.message.reply_text(
-            f"↩️ Removido:\n*{removido['categoria'].capitalize()}* — R$ {removido['valor']}"
+            f"↩️ Removido:\n*{removido['categoria'].capitalize()}* — {fmt_brl(float(removido['valor']))}"
             + (f" — {removido['descricao']}" if removido.get('descricao') else ""),
             parse_mode="Markdown"
         )
     except Exception as e:
         await update.message.reply_text(f"❌ Erro:\n`{e}`", parse_mode="Markdown")
+
+
+# ──────────────────────────────────────────
+# CRIAR NOVA CATEGORIA
+# ──────────────────────────────────────────
+
+async def cmd_nova_categoria(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text(
+        "➕ *Nova categoria*\n\nDigite o nome da nova categoria:",
+        parse_mode="Markdown"
+    )
+    return AGUARDA_NOME_CAT
+
+async def receber_nome_nova_cat(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    nome = update.message.text.strip().lower()
+
+    if nome in ORCAMENTO:
+        await update.message.reply_text(
+            f"❌ Já existe uma categoria chamada *{nome.capitalize()}*. Use outro nome.",
+            parse_mode="Markdown"
+        )
+        return AGUARDA_NOME_CAT
+
+    ctx.user_data["nova_cat_nome"] = nome
+    await update.message.reply_text(
+        f"💰 Categoria: *{nome.capitalize()}*\n\nAgora digite o limite mensal em R$:",
+        parse_mode="Markdown"
+    )
+    return AGUARDA_LIMITE_CAT
+
+async def receber_limite_nova_cat(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    val_raw = update.message.text.strip().replace(",", ".")
+    nome = ctx.user_data.get("nova_cat_nome")
+
+    if not nome:
+        await update.message.reply_text("❌ Operação expirada. Use /nova_categoria novamente.")
+        return ConversationHandler.END
+
+    try:
+        limite = float(val_raw)
+        if limite <= 0:
+            raise ValueError
+    except ValueError:
+        await update.message.reply_text("❌ Valor inválido. Digite um número positivo.")
+        return AGUARDA_LIMITE_CAT
+
+    # pede confirmação com botões
+    ctx.user_data["nova_cat_limite"] = limite
+    teclado = InlineKeyboardMarkup([[
+        InlineKeyboardButton("✅ Confirmar", callback_data=f"novacat:confirmar"),
+        InlineKeyboardButton("❌ Cancelar",  callback_data=f"novacat:cancelar"),
+    ]])
+    await update.message.reply_text(
+        f"📋 *Confirmar nova categoria?*\n\n"
+        f"🏷 *Nome:* {nome.capitalize()}\n"
+        f"💰 *Limite mensal:* {fmt_brl(limite)}",
+        parse_mode="Markdown",
+        reply_markup=teclado
+    )
+    return ConversationHandler.END
 
 # ──────────────────────────────────────────
 # ALTERAR CATEGORIA — conversa em etapas
@@ -467,7 +528,7 @@ async def receber_nova_categoria(update: Update, ctx: ContextTypes.DEFAULT_TYPE)
 async def cmd_alterar_valor(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     cats = list(ORCAMENTO.keys())
     teclado = InlineKeyboardMarkup([
-        [InlineKeyboardButton(f"{c.capitalize()} — R$ {ORCAMENTO[c]:.0f}", callback_data=f"altval:{c}")]
+        [InlineKeyboardButton(f"{c.capitalize()} — {fmt_brl(ORCAMENTO[c])}", callback_data=f"altval:{c}")]
         for c in cats
     ])
     await update.message.reply_text(
@@ -482,7 +543,7 @@ async def cb_alterar_valor(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     cat = query.data.split(":")[1]
     ctx.user_data["cat_valor"] = cat
     await query.edit_message_text(
-        f"💰 Limite atual de *{cat.capitalize()}*: R$ {ORCAMENTO[cat]:.2f}\n\nDigite o novo valor:",
+        f"💰 Limite atual de *{cat.capitalize()}*: {fmt_brl(ORCAMENTO[cat])}\n\nDigite o novo valor:",
         parse_mode="Markdown"
     )
     return AGUARDA_NOVO_VALOR
@@ -507,7 +568,7 @@ async def receber_novo_valor(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     ORCAMENTO[cat] = novo_valor
 
     await update.message.reply_text(
-        f"✅ Limite de *{cat.capitalize()}* alterado de R$ {antigo:.2f} para R$ {novo_valor:.2f}!",
+        f"✅ Limite de *{cat.capitalize()}* alterado de {fmt_brl(antigo)} para {fmt_brl(novo_valor)}!",
         parse_mode="Markdown"
     )
     return ConversationHandler.END
@@ -571,18 +632,18 @@ async def processar_gasto(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     desc_txt = f"\n📝 *Descrição:* {descricao}" if descricao else ""
     alerta = ""
     if saldo_apos < 0:
-        alerta = f"\n⚠️ *Isso vai estourar o limite em R$ {abs(saldo_apos):.2f}!*"
+        alerta = f"\n⚠️ *Isso vai estourar o limite em {fmt_brl(abs(saldo_apos))}!*"
     elif limite > 0 and saldo_apos / limite <= 0.20:
-        alerta = f"\n⚠️ Após este lançamento restam R$ {saldo_apos:.2f} nesta categoria."
+        alerta = f"\n⚠️ Após este lançamento restam {fmt_brl(saldo_apos)} nesta categoria."
 
     msg_confirmacao = (
         f"📋 *Confirmar lançamento?*\n\n"
         f"📅 *Data:* {data_hora()}\n"
         f"👤 *Quem:* {autor}\n"
         f"🏷 *Categoria:* {categoria.capitalize()}\n"
-        f"💰 *Valor:* R$ {valor:.2f}"
+        f"💰 *Valor:* {fmt_brl(valor)}"
         f"{desc_txt}\n\n"
-        f"{emoji} Saldo após: R$ {saldo_apos:.2f} de R$ {limite:.2f}"
+        f"{emoji} Saldo após: {fmt_brl(saldo_apos)} de {fmt_brl(limite)}"
         f"{alerta}"
     )
 
@@ -607,6 +668,25 @@ async def handle_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     await query.answer()
 
     # callbacks de alterar categoria/valor são tratados pelo ConversationHandler
+    if query.data.startswith("novacat:"):
+        acao = query.data.split(":")[1]
+        if acao == "cancelar":
+            await query.edit_message_text("❌ *Criação de categoria cancelada.*", parse_mode="Markdown")
+            return
+        nome  = query.from_user and ctx.user_data.get("nova_cat_nome")
+        limite = ctx.user_data.get("nova_cat_limite")
+        if not nome or not limite:
+            await query.edit_message_text("⚠️ Dados expirados. Use /nova_categoria novamente.")
+            return
+        ORCAMENTO[nome] = limite
+        ALIASES[nome] = nome
+        await query.edit_message_text(
+            f"✅ Categoria *{nome.capitalize()}* criada com limite de {fmt_brl(limite)}!\n\n"
+            f"Já pode lançar usando:\n`{nome} ; valor ; descrição`",
+            parse_mode="Markdown"
+        )
+        return
+
     if query.data.startswith("del:"):
         id_reg = query.data.split(":", 1)[1]
         if id_reg == "cancelar":
@@ -648,13 +728,13 @@ async def handle_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         desc_txt = f" — _{dados['descricao']}_" if dados["descricao"] else ""
         alerta = ""
         if gasto_cat > limite:
-            alerta = f"\n⚠️ *Limite estourado em R$ {abs(saldo):.2f}!*"
+            alerta = f"\n⚠️ *Limite estourado em {fmt_brl(abs(saldo))}!*"
         elif limite > 0 and saldo / limite <= 0.20:
-            alerta = f"\n⚠️ Restam apenas R$ {saldo:.2f} nesta categoria."
+            alerta = f"\n⚠️ Restam apenas {fmt_brl(saldo)} nesta categoria."
 
         await query.edit_message_text(
-            f"✅ *{dados['categoria'].capitalize()}* +R$ {dados['valor']:.2f}{desc_txt}\n"
-            f"{emoji} Saldo: R$ {saldo:.2f} de R$ {limite:.2f}{alerta}",
+            f"✅ *{dados['categoria'].capitalize()}* +{fmt_brl(dados['valor'])}{desc_txt}\n"
+            f"{emoji} Saldo: {fmt_brl(saldo)} de {fmt_brl(limite)}{alerta}",
             parse_mode="Markdown"
         )
         # envia resumo completo logo após confirmação
@@ -668,6 +748,15 @@ async def handle_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
 def main():
     app = ApplicationBuilder().token(TOKEN).build()
+
+    conv_nova_categoria = ConversationHandler(
+        entry_points=[CommandHandler("nova_categoria", cmd_nova_categoria)],
+        states={
+            AGUARDA_NOME_CAT:   [MessageHandler(filters.TEXT & ~filters.COMMAND, receber_nome_nova_cat)],
+            AGUARDA_LIMITE_CAT: [MessageHandler(filters.TEXT & ~filters.COMMAND, receber_limite_nova_cat)],
+        },
+        fallbacks=[CommandHandler("cancelar", cancelar_conversa)],
+    )
 
     conv_categoria = ConversationHandler(
         entry_points=[CommandHandler("alterar_categoria", cmd_alterar_categoria)],
@@ -693,12 +782,13 @@ def main():
     app.add_handler(CommandHandler("meusgastos", cmd_meusgastos))
     app.add_handler(CommandHandler("deletar",    cmd_deletar))
     app.add_handler(CommandHandler("desfazer",   cmd_desfazer))
+    app.add_handler(conv_nova_categoria)
     app.add_handler(conv_categoria)
     app.add_handler(conv_valor)
     app.add_handler(CallbackQueryHandler(handle_callback))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, processar_gasto))
 
-    print("Bot rodando v9...")
+    print("Bot rodando v11...")
     app.run_polling()
 
 if __name__ == "__main__":
