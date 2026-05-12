@@ -289,11 +289,15 @@ async def enviar_painel(update_or_message, ctx):
     hoje = agora_br().strftime("%d/%m/%Y %H:%M")
     teclado = InlineKeyboardMarkup([
         [
-            InlineKeyboardButton("📊 Resumo",        callback_data="painel:resumo"),
-            InlineKeyboardButton("📋 Histórico",      callback_data="painel:historico"),
+            InlineKeyboardButton("💸 Lançar",         callback_data="painel:lancar"),
+            InlineKeyboardButton("↩️ Desfazer",       callback_data="painel:desfazer"),
         ],
         [
+            InlineKeyboardButton("📊 Resumo",         callback_data="painel:resumo"),
             InlineKeyboardButton("👤 Meus Gastos",    callback_data="painel:meusgastos"),
+        ],
+        [
+            InlineKeyboardButton("📋 Histórico",      callback_data="painel:historico"),
             InlineKeyboardButton("💰 Orçamento",      callback_data="painel:orcamento"),
         ],
         [
@@ -301,15 +305,12 @@ async def enviar_painel(update_or_message, ctx):
             InlineKeyboardButton("🗑 Deletar",        callback_data="painel:deletar"),
         ],
         [
-            InlineKeyboardButton("➕ Nova Categoria",  callback_data="painel:nova_categoria"),
+            InlineKeyboardButton("➕ Nova Cat.",       callback_data="painel:nova_categoria"),
             InlineKeyboardButton("✏️ Renomear Cat.",  callback_data="painel:alterar_categoria"),
         ],
         [
-            InlineKeyboardButton("🗑 Remover Cat.",    callback_data="painel:remover_categoria"),
-        ],
-        [
             InlineKeyboardButton("💲 Alterar Limite", callback_data="painel:alterar_valor"),
-            InlineKeyboardButton("↩️ Desfazer",       callback_data="painel:desfazer"),
+            InlineKeyboardButton("🗑 Remover Cat.",   callback_data="painel:remover_categoria"),
         ],
     ])
     msg = update_or_message if hasattr(update_or_message, 'reply_text') else update_or_message.message
@@ -323,11 +324,15 @@ async def cmd_painel(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     hoje = agora_br().strftime("%d/%m/%Y %H:%M")
     teclado = InlineKeyboardMarkup([
         [
-            InlineKeyboardButton("📊 Resumo",        callback_data="painel:resumo"),
-            InlineKeyboardButton("📋 Histórico",      callback_data="painel:historico"),
+            InlineKeyboardButton("💸 Lançar",         callback_data="painel:lancar"),
+            InlineKeyboardButton("↩️ Desfazer",       callback_data="painel:desfazer"),
         ],
         [
+            InlineKeyboardButton("📊 Resumo",         callback_data="painel:resumo"),
             InlineKeyboardButton("👤 Meus Gastos",    callback_data="painel:meusgastos"),
+        ],
+        [
+            InlineKeyboardButton("📋 Histórico",      callback_data="painel:historico"),
             InlineKeyboardButton("💰 Orçamento",      callback_data="painel:orcamento"),
         ],
         [
@@ -335,18 +340,12 @@ async def cmd_painel(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             InlineKeyboardButton("🗑 Deletar",        callback_data="painel:deletar"),
         ],
         [
-            InlineKeyboardButton("➕ Nova Categoria",  callback_data="painel:nova_categoria"),
+            InlineKeyboardButton("➕ Nova Cat.",       callback_data="painel:nova_categoria"),
             InlineKeyboardButton("✏️ Renomear Cat.",  callback_data="painel:alterar_categoria"),
         ],
         [
-            InlineKeyboardButton("🗑 Remover Cat.",    callback_data="painel:remover_categoria"),
-        ],
-        [
             InlineKeyboardButton("💲 Alterar Limite", callback_data="painel:alterar_valor"),
-            InlineKeyboardButton("↩️ Desfazer",       callback_data="painel:desfazer"),
-        ],
-        [
-            InlineKeyboardButton("↩️ Desfazer último", callback_data="painel:desfazer"),
+            InlineKeyboardButton("🗑 Remover Cat.",   callback_data="painel:remover_categoria"),
         ],
     ])
     await update.message.reply_text(
@@ -1458,7 +1457,7 @@ def main():
     app.add_handler(CallbackQueryHandler(handle_callback))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, processar_gasto))
 
-    print("Bot rodando v30...")
+    print("Bot rodando v31...")
     app.run_polling(drop_pending_updates=True)
 
 if __name__ == "__main__":
