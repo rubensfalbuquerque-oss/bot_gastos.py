@@ -55,6 +55,12 @@ ALIASES = {
     "outros": "outros", "outro": "outros",
 }
 
+# palavras que indicam tentativa de lançamento
+PALAVRAS_GATILHO = set(ALIASES.keys()) | {
+    "gasto", "gastei", "paguei", "comprei", "uber", "ifood",
+    "mercado", "farmacia", "farmácia", "restaurante", "posto",
+}
+
 # ──────────────────────────────────────────
 # SUPABASE
 # ──────────────────────────────────────────
@@ -107,7 +113,6 @@ def buscar_gastos_mes():
 
 def remover_ultimo():
     mes = mes_atual()
-    # busca o último registro do mês
     r = httpx.get(
         f"{SUPABASE_URL}/rest/v1/gastos",
         headers=HEADERS,
@@ -118,7 +123,6 @@ def remover_ultimo():
     if not registros:
         return None
     ultimo = registros[0]
-    # deleta
     httpx.delete(
         f"{SUPABASE_URL}/rest/v1/gastos",
         headers=HEADERS,
@@ -177,6 +181,14 @@ MODELO_ERRO = (
     "`mercado`  `restaurante`  `transporte`\n"
     "`lazer`  `saude`  `moradia`  `roupas`  `outros`"
 )
+
+def parece_lancamento(texto):
+    """Detecta se a mensagem parece uma tentativa de lançamento mal formatada."""
+    texto_lower = texto.lower()
+    tem_numero = bool(re.search(r"\d+", texto))
+    tem_palavra_gatilho = any(p in texto_lower for p in PALAVRAS_GATILHO)
+    tem_separador_errado = any(s in texto for s in [":", "-", "/", "|", ","])
+    return tem_numero and (tem_palavra_gatilho or tem_separador_errado)
 
 # ──────────────────────────────────────────
 # HANDLERS
@@ -261,7 +273,13 @@ async def cmd_desfazer(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 async def processar_gasto(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     texto = update.message.text.strip()
 
+    # Se não tem ponto e vírgula, verifica se parece tentativa de lançamento
     if ";" not in texto:
+        if parece_lancamento(texto):
+            await update.message.reply_text(
+                f"⚠️ Parece que você tentou registrar um gasto, mas o formato está errado.\n\n{MODELO_ERRO}",
+                parse_mode="Markdown"
+            )
         return
 
     partes = texto.split(";")
