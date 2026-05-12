@@ -679,8 +679,33 @@ async def cancelar_conversa(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 # FLUXO DE CONFIRMAÇÃO DE GASTO
 # ──────────────────────────────────────────
 
+ATALHOS = {
+    "painel":             cmd_painel,
+    "resumo":             cmd_resumo,
+    "tabela":             cmd_tabela,
+    "historico":          cmd_historico,
+    "histórico":          cmd_historico,
+    "orcamento":          cmd_orcamento,
+    "orçamento":          cmd_orcamento,
+    "meusgastos":         cmd_meusgastos,
+    "meus gastos":        cmd_meusgastos,
+    "recorrentes":        cmd_recorrentes,
+    "desfazer":           cmd_desfazer,
+    "deletar":            cmd_deletar,
+    "nova categoria":     cmd_nova_categoria,
+    "alterar categoria":  cmd_alterar_categoria,
+    "alterar valor":      cmd_alterar_valor,
+}
+
 async def processar_gasto(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     texto = update.message.text.strip()
+
+    # verifica atalhos por palavra-chave
+    texto_lower = texto.lower()
+    for palavra, handler in ATALHOS.items():
+        if texto_lower == palavra:
+            await handler(update, ctx)
+            return
 
     if ";" not in texto:
         if parece_lancamento(texto):
@@ -1104,7 +1129,7 @@ def main():
     app.add_handler(CallbackQueryHandler(handle_callback))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, processar_gasto))
 
-    print("Bot rodando v14...")
+    print("Bot rodando v15...")
     app.run_polling()
 
 if __name__ == "__main__":
