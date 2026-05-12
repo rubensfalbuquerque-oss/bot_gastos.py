@@ -536,8 +536,9 @@ async def cmd_desfazer(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 # CRIAR NOVA CATEGORIA
 # ──────────────────────────────────────────
 
-async def cmd_nova_categoria(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(
+async def cmd_nova_categoria(update, ctx: ContextTypes.DEFAULT_TYPE):
+    msg = update.message if hasattr(update, "message") and update.message else update
+    await msg.reply_text(
         "➕ *Nova categoria*\n\nDigite o nome da nova categoria:",
         parse_mode="Markdown"
     )
@@ -595,13 +596,14 @@ async def receber_limite_nova_cat(update: Update, ctx: ContextTypes.DEFAULT_TYPE
 # ALTERAR CATEGORIA — conversa em etapas
 # ──────────────────────────────────────────
 
-async def cmd_alterar_categoria(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+async def cmd_alterar_categoria(update, ctx: ContextTypes.DEFAULT_TYPE):
+    msg = update.message if hasattr(update, "message") and update.message else update
     cats = list(ORCAMENTO.keys())
     teclado = InlineKeyboardMarkup([
         [InlineKeyboardButton(c.capitalize(), callback_data=f"altcat:{c}")]
         for c in cats
     ])
-    await update.message.reply_text(
+    await msg.reply_text(
         "✏️ *Qual categoria quer renomear?*",
         parse_mode="Markdown",
         reply_markup=teclado
@@ -650,13 +652,14 @@ async def receber_nova_categoria(update: Update, ctx: ContextTypes.DEFAULT_TYPE)
 # ALTERAR VALOR — conversa em etapas
 # ──────────────────────────────────────────
 
-async def cmd_alterar_valor(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+async def cmd_alterar_valor(update, ctx: ContextTypes.DEFAULT_TYPE):
+    msg = update.message if hasattr(update, "message") and update.message else update
     cats = list(ORCAMENTO.keys())
     teclado = InlineKeyboardMarkup([
         [InlineKeyboardButton(f"{c.capitalize()} — {fmt_brl(ORCAMENTO[c])}", callback_data=f"altval:{c}")]
         for c in cats
     ])
-    await update.message.reply_text(
+    await msg.reply_text(
         "💰 *Qual categoria quer alterar o limite?*",
         parse_mode="Markdown",
         reply_markup=teclado
@@ -823,17 +826,18 @@ async def handle_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         acao = query.data.split(":")[1]
         await query.answer()
 
-        # para ações que abrem conversa, avisa o usuário para usar o comando
-        if acao in ("nova_categoria", "alterar_categoria", "alterar_valor"):
-            cmds = {
-                "nova_categoria":    "/nova\\_categoria",
-                "alterar_categoria": "/alterar\\_categoria",
-                "alterar_valor":     "/alterar\\_valor",
-            }
-            await query.edit_message_text(
-                f"Use o comando {cmds[acao]} para continuar.",
-                parse_mode="Markdown"
-            )
+        # para ações que abrem conversa, inicia direto
+        if acao == "nova_categoria":
+            await query.answer()
+            await cmd_nova_categoria(query, ctx)
+            return
+        elif acao == "alterar_categoria":
+            await query.answer()
+            await cmd_alterar_categoria(query, ctx)
+            return
+        elif acao == "alterar_valor":
+            await query.answer()
+            await cmd_alterar_valor(query, ctx)
             return
 
         # ações diretas — chama o handler correspondente simulando update
@@ -954,9 +958,10 @@ async def handle_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     if desc:
                         linha += f" — {desc}"
                     linhas.append(linha)
-                await query.edit_message_text("\n".join(linhas), parse_mode="Markdown")
+                await query.message.reply_text("\n".join(linhas), parse_mode="Markdown")
+                await enviar_painel(query.message, ctx)
             except Exception as e:
-                await query.edit_message_text(f"❌ Erro:\n`{e}`", parse_mode="Markdown")
+                await query.message.reply_text(f"❌ Erro:\n`{e}`", parse_mode="Markdown")
 
         elif acao == "deletar":
             try:
@@ -1151,7 +1156,7 @@ def main():
     app.add_handler(CallbackQueryHandler(handle_callback))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, processar_gasto))
 
-    print("Bot rodando v21...")
+    print("Bot rodando v23...")
     app.run_polling()
 
 if __name__ == "__main__":
