@@ -381,7 +381,6 @@ async def cmd_historico_old(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         linhas = [f"🗂 *Últimos lançamentos — {hoje}*\n"]
         for r in ultimos:
             desc = f" — {r['desc']}" if r.get("desc") else ""
-            # data já vem no formato "dd/mm/yyyy hh:mm"
             desc_txt = r['desc'] if r.get('desc') else "—"
             linhas.append(
                 f"`{r['data']}` | *{r['categoria'].capitalize()}* | "
@@ -415,11 +414,8 @@ async def cmd_historico(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             linhas.append(f"\n*{cat.capitalize()}* — Total: {fmt_brl(total_cat)}")
             linhas.append("─" * 20)
             for r in regs:
-                partes_data = r['data'].split(" ") if r.get('data') else ["?", "?"]
-                dt = partes_data[0] if len(partes_data) > 0 else "?"
-                hr = partes_data[1] if len(partes_data) > 1 else "?"
                 desc_txt = r['desc'] if r.get('desc') else "—"
-                linhas.append(f"`{dt}` | `{hr}` | {fmt_brl(r['valor'])} | {desc_txt} | _{r['autor']}_")
+                linhas.append(f"`{r['data']}` | {fmt_brl(r['valor'])} | {desc_txt} | _{r['autor']}_")
 
         total_geral = sum(r["valor"] for r in todos)
         linhas.append(f"\n{'─' * 20}")
@@ -484,11 +480,8 @@ async def cmd_deletar(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             desc  = reg.get("descricao", "")
             data  = reg.get("data", "")
             autor = reg.get("autor", "")
-            partes_data = data.split(" ") if data else ["?", "?"]
-            dt = partes_data[0] if len(partes_data) > 0 else "?"
-            hr = partes_data[1] if len(partes_data) > 1 else "?"
             desc_txt = desc if desc else "—"
-            label = f"#{i} {dt} | {hr} | {cat} | {fmt_brl(val)} | {desc_txt} | {autor}"
+            label = f"#{i} {data} | {cat} | {fmt_brl(val)} | {desc_txt} | {autor}"
             botoes.append([InlineKeyboardButton(label, callback_data=f"del:{reg['id']}")])
 
         botoes.append([InlineKeyboardButton("❌ Cancelar", callback_data="del:cancelar")])
@@ -872,11 +865,8 @@ async def handle_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     linhas.append(f"\n*{cat.capitalize()}* — Total: {fmt_brl(total_cat)}")
                     linhas.append("─" * 20)
                     for r in regs:
-                        partes_data = r["data"].split(" ") if r.get("data") else ["?","?"]
-                        dt = partes_data[0] if len(partes_data)>0 else "?"
-                        hr = partes_data[1] if len(partes_data)>1 else "?"
                         desc_txt = r["desc"] if r.get("desc") else "—"
-                        linhas.append(f"`{dt}` | `{hr}` | {fmt_brl(r['valor'])} | {desc_txt} | _{r['autor']}_")
+                        linhas.append(f"`{r['data']}` | {fmt_brl(r['valor'])} | {desc_txt} | _{r['autor']}_")
                 total_geral = sum(r["valor"] for r in todos)
                 linhas.append(f"\n{'─'*20}")
                 linhas.append(f"💰 *Total gasto: {fmt_brl(total_geral)}*")
@@ -1157,7 +1147,7 @@ def main():
     app.add_handler(CallbackQueryHandler(handle_callback))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, processar_gasto))
 
-    print("Bot rodando v19...")
+    print("Bot rodando v20...")
     app.run_polling()
 
 if __name__ == "__main__":
