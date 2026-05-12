@@ -699,6 +699,16 @@ async def receber_novo_valor(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         f"✅ Limite de *{cat.capitalize()}* alterado de {fmt_brl(antigo)} para {fmt_brl(novo_valor)}!",
         parse_mode="Markdown"
     )
+
+    # envia orçamento atualizado
+    hoje = agora_br().strftime("%d/%m/%Y")
+    linhas = [f"💰 *Orçamento Mensal atualizado — {hoje}*\n"]
+    for c, v in ORCAMENTO.items():
+        linhas.append(f"• *{c.capitalize()}:* {fmt_brl(v)}")
+    linhas.append(f"\n*Total:* {fmt_brl(sum(ORCAMENTO.values()))}")
+    await update.message.reply_text("\n".join(linhas), parse_mode="Markdown")
+    await enviar_painel(update.message, ctx)
+
     return ConversationHandler.END
 
 async def cancelar_conversa(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
@@ -1156,7 +1166,7 @@ def main():
     app.add_handler(CallbackQueryHandler(handle_callback))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, processar_gasto))
 
-    print("Bot rodando v23...")
+    print("Bot rodando v24...")
     app.run_polling()
 
 if __name__ == "__main__":
