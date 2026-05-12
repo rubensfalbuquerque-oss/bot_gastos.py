@@ -183,7 +183,7 @@ def formatar_resumo(gastos):
         b = barra(gasto, limite)
         pct_cat = (gasto / limite * 100) if limite else 0
         linhas.append(
-            f"{emoji_status(gasto, limite)} *{cat.capitalize()}* — R$ {gasto:.0f} de R$ {limite:.0f} ({pct_cat:.0f}%)\n"
+            f"{emoji_status(gasto, limite)} *{cat.capitalize()}* — R$ {gasto:.0f}/{limite:.0f} ({pct_cat:.0f}%)\n"
             f"   `{b}`\n"
             f"   Saldo: R$ {saldo:.2f}\n"
         )
@@ -657,6 +657,8 @@ async def handle_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             f"{emoji} Saldo: R$ {saldo:.2f} de R$ {limite:.2f}{alerta}",
             parse_mode="Markdown"
         )
+        # envia resumo completo logo após confirmação
+        await query.message.reply_text(formatar_resumo(gastos), parse_mode="Markdown")
     except Exception as e:
         await query.edit_message_text(f"❌ Erro ao salvar:\n`{e}`", parse_mode="Markdown")
 
@@ -696,7 +698,7 @@ def main():
     app.add_handler(CallbackQueryHandler(handle_callback))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, processar_gasto))
 
-    print("Bot rodando v7...")
+    print("Bot rodando v9...")
     app.run_polling()
 
 if __name__ == "__main__":
