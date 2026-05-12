@@ -11,7 +11,7 @@ from datetime import datetime
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     ApplicationBuilder, CommandHandler, MessageHandler,
-    ContextTypes, filters, CallbackQueryHandler
+    ContextTypes, filters, CallbackQueryHandler, ConversationHandler
 )
 
 # ──────────────────────────────────────────
@@ -55,11 +55,13 @@ ALIASES = {
     "outros": "outros", "outro": "outros",
 }
 
-# palavras que indicam tentativa de lançamento
 PALAVRAS_GATILHO = set(ALIASES.keys()) | {
     "gasto", "gastei", "paguei", "comprei", "uber", "ifood",
     "mercado", "farmacia", "farmácia", "restaurante", "posto",
 }
+
+# estados para ConversationHandler
+AGUARDA_NOVA_CATEGORIA, AGUARDA_NOVO_VALOR = range(2)
 
 # ──────────────────────────────────────────
 # SUPABASE
@@ -75,10 +77,12 @@ HEADERS = {
 def mes_atual():
     return datetime.now().strftime("%Y-%m")
 
+def data_hora():
+    return datetime.now().strftime("%d/%m/%Y %H:%M")
+
 def adicionar_gasto(categoria, valor, descricao, autor):
-    data = datetime.now().strftime("%d/%m %H:%M")
     payload = {
-        "data": data,
+        "data": data_hora(),
         "mes": mes_atual(),
         "categoria": categoria,
         "valor": valor,
@@ -130,6 +134,25 @@ def remover_ultimo():
     ).raise_for_status()
     return ultimo
 
+
+def buscar_todos_mes():
+    """Retorna lista flat de todos os registros do mês com id."""
+    mes = mes_atual()
+    r = httpx.get(
+        f"{SUPABASE_URL}/rest/v1/gastos",
+        headers=HEADERS,
+        params={"mes": f"eq.{mes}", "order": "criado_em.desc"},
+    )
+    r.raise_for_status()
+    return r.json()
+
+def deletar_por_id(id_registro):
+    httpx.delete(
+        f"{SUPABASE_URL}/rest/v1/gastos",
+        headers=HEADERS,
+        params={"id": f"eq.{id_registro}"},
+    ).raise_for_status()
+
 # ──────────────────────────────────────────
 # FORMATAÇÃO
 # ──────────────────────────────────────────
@@ -147,8 +170,8 @@ def emoji_status(gasto, limite):
     return "🟢"
 
 def formatar_resumo(gastos):
-    mes_label = datetime.now().strftime("%B/%Y").capitalize()
-    linhas = [f"📊 *Resumo — {mes_label}*\n"]
+    hoje = datetime.now().strftime("%d/%m/%Y")
+    linhas = [f"📊 *Resumo — {hoje}*\n"]
     total_gasto = 0
     total_orc = sum(ORCAMENTO.values())
     for cat, limite in ORCAMENTO.items():
@@ -183,7 +206,6 @@ MODELO_ERRO = (
 )
 
 def parece_lancamento(texto):
-    """Detecta se a mensagem parece uma tentativa de lançamento mal formatada."""
     texto_lower = texto.lower()
     tem_numero = bool(re.search(r"\d+", texto))
     tem_palavra_gatilho = any(p in texto_lower for p in PALAVRAS_GATILHO)
@@ -191,12 +213,13 @@ def parece_lancamento(texto):
     return tem_numero and (tem_palavra_gatilho or tem_separador_errado)
 
 # ──────────────────────────────────────────
-# HANDLERS
+# HANDLERS — CONSULTAS
 # ──────────────────────────────────────────
 
 async def cmd_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    hoje = datetime.now().strftime("%d/%m/%Y")
     msg = (
-        "👋 *Bot de Gastos ativo!*\n\n"
+        f"👋 *Bot de Gastos ativo!* — {hoje}\n\n"
         "*Como registrar:*\n"
         "`categoria ; valor ; descrição`\n\n"
         "*Exemplos:*\n"
@@ -208,9 +231,13 @@ async def cmd_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         "`lazer`  `saude`  `moradia`  `roupas`  `outros`\n\n"
         "*Comandos:*\n"
         "/resumo — saldo de todas as categorias\n"
+        "/meusgastos — resumo por usuário\n"
+        "/tabela — lista completa de gastos do mês\n"
         "/historico — últimos 10 lançamentos\n"
         "/orcamento — limites configurados\n"
-        "/tabela — lista completa de gastos do mês\n"
+        "/alterar\\_categoria — renomear uma categoria\n"
+        "/alterar\\_valor — mudar o limite de uma categoria\n"
+        "/deletar — escolher e deletar qualquer lançamento\n"
         "/desfazer — remove o último lançamento\n\n"
         "💾 _Dados salvos no Supabase_"
     )
@@ -224,7 +251,8 @@ async def cmd_resumo(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"❌ Erro ao buscar dados:\n`{e}`", parse_mode="Markdown")
 
 async def cmd_orcamento(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    linhas = ["💰 *Orçamento Mensal*\n"]
+    hoje = datetime.now().strftime("%d/%m/%Y")
+    linhas = [f"💰 *Orçamento Mensal — {hoje}*\n"]
     for cat, valor in ORCAMENTO.items():
         linhas.append(f"• *{cat.capitalize()}:* R$ {valor:.2f}")
     linhas.append(f"\n*Total:* R$ {sum(ORCAMENTO.values()):.2f}")
@@ -242,7 +270,8 @@ async def cmd_historico(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             return
         ultimos = todos[-10:]
         ultimos.reverse()
-        linhas = ["🗂 *Últimos lançamentos*\n"]
+        hoje = datetime.now().strftime("%d/%m/%Y")
+        linhas = [f"🗂 *Últimos lançamentos — {hoje}*\n"]
         for r in ultimos:
             desc = f" — {r['desc']}" if r.get("desc") else ""
             linhas.append(
@@ -256,7 +285,7 @@ async def cmd_historico(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 async def cmd_tabela(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     try:
         gastos = buscar_gastos_mes()
-        mes_label = datetime.now().strftime("%B/%Y").capitalize()
+        hoje = datetime.now().strftime("%d/%m/%Y")
 
         todos = []
         for cat, regs in gastos.items():
@@ -267,7 +296,7 @@ async def cmd_tabela(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("Nenhum lançamento este mês ainda.")
             return
 
-        linhas = [f"📋 *Tabela de gastos — {mes_label}*\n"]
+        linhas = [f"📋 *Tabela de gastos — {hoje}*\n"]
 
         for cat, limite in ORCAMENTO.items():
             regs = gastos.get(cat, [])
@@ -288,6 +317,76 @@ async def cmd_tabela(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         await update.message.reply_text(f"❌ Erro:\n`{e}`", parse_mode="Markdown")
 
+async def cmd_meusgastos(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    try:
+        gastos = buscar_gastos_mes()
+        hoje = datetime.now().strftime("%d/%m/%Y")
+
+        # agrupa por autor
+        por_autor = {}
+        for cat, regs in gastos.items():
+            for r in regs:
+                autor = r["autor"]
+                if autor not in por_autor:
+                    por_autor[autor] = {"total": 0, "cats": {}}
+                por_autor[autor]["total"] += r["valor"]
+                por_autor[autor]["cats"][cat] = por_autor[autor]["cats"].get(cat, 0) + r["valor"]
+
+        if not por_autor:
+            await update.message.reply_text("Nenhum lançamento este mês ainda.")
+            return
+
+        total_geral = sum(r["valor"] for regs in gastos.values() for r in regs)
+        linhas = [f"👤 *Gastos por usuário — {hoje}*\n"]
+
+        for autor, info in sorted(por_autor.items()):
+            pct = info["total"] / total_geral * 100 if total_geral else 0
+            linhas.append(f"*{autor}* — R$ {info['total']:.2f} ({pct:.0f}%)")
+            for cat, val in sorted(info["cats"].items(), key=lambda x: -x[1]):
+                linhas.append(f"   • {cat.capitalize()}: R$ {val:.2f}")
+            linhas.append("")
+
+        linhas.append(f"{'─'*20}")
+        linhas.append(f"💰 *Total geral: R$ {total_geral:.2f}*")
+
+        await update.message.reply_text("\n".join(linhas), parse_mode="Markdown")
+    except Exception as e:
+        await update.message.reply_text(f"❌ Erro:\n`{e}`", parse_mode="Markdown")
+
+
+async def cmd_deletar(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    try:
+        registros = buscar_todos_mes()
+        if not registros:
+            await update.message.reply_text("Nenhum lançamento este mês para deletar.")
+            return
+
+        # monta botões — máximo 20 para não estourar o Telegram
+        botoes = []
+        for i, reg in enumerate(registros[:20], start=1):
+            cat   = reg.get("categoria", "?").capitalize()
+            val   = float(reg.get("valor", 0))
+            desc  = reg.get("descricao", "")
+            data  = reg.get("data", "")
+            autor = reg.get("autor", "")
+            label = f"#{i} {data} | {cat} R${val:.0f}"
+            if desc:
+                label += f" — {desc}"
+            label += f" ({autor})"
+            botoes.append([InlineKeyboardButton(label, callback_data=f"del:{reg['id']}")])
+
+        botoes.append([InlineKeyboardButton("❌ Cancelar", callback_data="del:cancelar")])
+        teclado = InlineKeyboardMarkup(botoes)
+
+        await update.message.reply_text(
+            "🗑 *Selecione o lançamento para deletar:*",
+            parse_mode="Markdown",
+            reply_markup=teclado
+        )
+    except Exception as e:
+        await update.message.reply_text(f"❌ Erro:
+`{e}`", parse_mode="Markdown")
+
 async def cmd_desfazer(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     try:
         removido = remover_ultimo()
@@ -303,13 +402,123 @@ async def cmd_desfazer(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"❌ Erro:\n`{e}`", parse_mode="Markdown")
 
 # ──────────────────────────────────────────
-# FLUXO DE CONFIRMAÇÃO
+# ALTERAR CATEGORIA — conversa em etapas
+# ──────────────────────────────────────────
+
+async def cmd_alterar_categoria(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    cats = list(ORCAMENTO.keys())
+    teclado = InlineKeyboardMarkup([
+        [InlineKeyboardButton(c.capitalize(), callback_data=f"altcat:{c}")]
+        for c in cats
+    ])
+    await update.message.reply_text(
+        "✏️ *Qual categoria quer renomear?*",
+        parse_mode="Markdown",
+        reply_markup=teclado
+    )
+
+async def cb_alterar_categoria(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    cat = query.data.split(":")[1]
+    ctx.user_data["cat_renomear"] = cat
+    await query.edit_message_text(
+        f"✏️ Renomeando *{cat.capitalize()}*.\n\nDigite o novo nome:",
+        parse_mode="Markdown"
+    )
+    return AGUARDA_NOVA_CATEGORIA
+
+async def receber_nova_categoria(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    novo_nome = update.message.text.strip().lower()
+    cat_antiga = ctx.user_data.get("cat_renomear")
+
+    if not cat_antiga or cat_antiga not in ORCAMENTO:
+        await update.message.reply_text("❌ Operação expirada. Use /alterar_categoria novamente.")
+        return ConversationHandler.END
+
+    if novo_nome in ORCAMENTO and novo_nome != cat_antiga:
+        await update.message.reply_text(f"❌ Já existe uma categoria chamada *{novo_nome}*.", parse_mode="Markdown")
+        return ConversationHandler.END
+
+    # renomeia no dicionário
+    valor = ORCAMENTO.pop(cat_antiga)
+    ORCAMENTO[novo_nome] = valor
+
+    # atualiza aliases
+    for alias, cat in list(ALIASES.items()):
+        if cat == cat_antiga:
+            ALIASES[alias] = novo_nome
+    ALIASES[novo_nome] = novo_nome
+
+    await update.message.reply_text(
+        f"✅ Categoria *{cat_antiga.capitalize()}* renomeada para *{novo_nome.capitalize()}*!",
+        parse_mode="Markdown"
+    )
+    return ConversationHandler.END
+
+# ──────────────────────────────────────────
+# ALTERAR VALOR — conversa em etapas
+# ──────────────────────────────────────────
+
+async def cmd_alterar_valor(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    cats = list(ORCAMENTO.keys())
+    teclado = InlineKeyboardMarkup([
+        [InlineKeyboardButton(f"{c.capitalize()} — R$ {ORCAMENTO[c]:.0f}", callback_data=f"altval:{c}")]
+        for c in cats
+    ])
+    await update.message.reply_text(
+        "💰 *Qual categoria quer alterar o limite?*",
+        parse_mode="Markdown",
+        reply_markup=teclado
+    )
+
+async def cb_alterar_valor(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    cat = query.data.split(":")[1]
+    ctx.user_data["cat_valor"] = cat
+    await query.edit_message_text(
+        f"💰 Limite atual de *{cat.capitalize()}*: R$ {ORCAMENTO[cat]:.2f}\n\nDigite o novo valor:",
+        parse_mode="Markdown"
+    )
+    return AGUARDA_NOVO_VALOR
+
+async def receber_novo_valor(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    cat = ctx.user_data.get("cat_valor")
+    val_raw = update.message.text.strip().replace(",", ".")
+
+    if not cat or cat not in ORCAMENTO:
+        await update.message.reply_text("❌ Operação expirada. Use /alterar_valor novamente.")
+        return ConversationHandler.END
+
+    try:
+        novo_valor = float(val_raw)
+        if novo_valor <= 0:
+            raise ValueError
+    except ValueError:
+        await update.message.reply_text("❌ Valor inválido. Digite um número positivo.")
+        return ConversationHandler.END
+
+    antigo = ORCAMENTO[cat]
+    ORCAMENTO[cat] = novo_valor
+
+    await update.message.reply_text(
+        f"✅ Limite de *{cat.capitalize()}* alterado de R$ {antigo:.2f} para R$ {novo_valor:.2f}!",
+        parse_mode="Markdown"
+    )
+    return ConversationHandler.END
+
+async def cancelar_conversa(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("Operação cancelada.")
+    return ConversationHandler.END
+
+# ──────────────────────────────────────────
+# FLUXO DE CONFIRMAÇÃO DE GASTO
 # ──────────────────────────────────────────
 
 async def processar_gasto(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     texto = update.message.text.strip()
 
-    # Se não tem ponto e vírgula, verifica se parece tentativa de lançamento
     if ";" not in texto:
         if parece_lancamento(texto):
             await update.message.reply_text(
@@ -320,9 +529,7 @@ async def processar_gasto(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
     partes = texto.split(";")
     if len(partes) < 2:
-        await update.message.reply_text(
-            f"❌ Formato incorreto.\n\n{MODELO_ERRO}", parse_mode="Markdown"
-        )
+        await update.message.reply_text(f"❌ Formato incorreto.\n\n{MODELO_ERRO}", parse_mode="Markdown")
         return
 
     cat_raw   = partes[0].strip().lower()
@@ -342,10 +549,7 @@ async def processar_gasto(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         if valor <= 0:
             raise ValueError
     except ValueError:
-        await update.message.reply_text(
-            f"❌ Valor inválido: *{val_raw}*\n\n{MODELO_ERRO}",
-            parse_mode="Markdown"
-        )
+        await update.message.reply_text(f"❌ Valor inválido: *{val_raw}*\n\n{MODELO_ERRO}", parse_mode="Markdown")
         return
 
     autor = update.message.from_user.first_name or "Desconhecido"
@@ -369,6 +573,7 @@ async def processar_gasto(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
     msg_confirmacao = (
         f"📋 *Confirmar lançamento?*\n\n"
+        f"📅 *Data:* {data_hora()}\n"
         f"👤 *Quem:* {autor}\n"
         f"🏷 *Categoria:* {categoria.capitalize()}\n"
         f"💰 *Valor:* R$ {valor:.2f}"
@@ -396,6 +601,25 @@ async def processar_gasto(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 async def handle_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
+
+    # callbacks de alterar categoria/valor são tratados pelo ConversationHandler
+    if query.data.startswith("del:"):
+        id_reg = query.data.split(":", 1)[1]
+        if id_reg == "cancelar":
+            await query.edit_message_text("Operação cancelada.")
+            return
+        try:
+            deletar_por_id(int(id_reg))
+            await query.edit_message_text("🗑 *Lançamento deletado com sucesso!*", parse_mode="Markdown")
+        except Exception as e:
+            await query.edit_message_text(f"❌ Erro ao deletar:\n`{e}`", parse_mode="Markdown")
+        return
+
+    if query.data.startswith("altcat:") or query.data.startswith("altval:"):
+        if query.data.startswith("altcat:"):
+            return await cb_alterar_categoria(update, ctx)
+        else:
+            return await cb_alterar_valor(update, ctx)
 
     acao, pending_key = query.data.split(":", 1)
     dados = ctx.bot_data.pop(pending_key, None)
@@ -438,15 +662,37 @@ async def handle_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
 def main():
     app = ApplicationBuilder().token(TOKEN).build()
-    app.add_handler(CommandHandler("start",     cmd_start))
-    app.add_handler(CommandHandler("resumo",    cmd_resumo))
-    app.add_handler(CommandHandler("orcamento", cmd_orcamento))
-    app.add_handler(CommandHandler("historico", cmd_historico))
-    app.add_handler(CommandHandler("tabela",    cmd_tabela))
-    app.add_handler(CommandHandler("desfazer",  cmd_desfazer))
+
+    conv_categoria = ConversationHandler(
+        entry_points=[CommandHandler("alterar_categoria", cmd_alterar_categoria)],
+        states={
+            AGUARDA_NOVA_CATEGORIA: [MessageHandler(filters.TEXT & ~filters.COMMAND, receber_nova_categoria)],
+        },
+        fallbacks=[CommandHandler("cancelar", cancelar_conversa)],
+    )
+
+    conv_valor = ConversationHandler(
+        entry_points=[CommandHandler("alterar_valor", cmd_alterar_valor)],
+        states={
+            AGUARDA_NOVO_VALOR: [MessageHandler(filters.TEXT & ~filters.COMMAND, receber_novo_valor)],
+        },
+        fallbacks=[CommandHandler("cancelar", cancelar_conversa)],
+    )
+
+    app.add_handler(CommandHandler("start",      cmd_start))
+    app.add_handler(CommandHandler("resumo",     cmd_resumo))
+    app.add_handler(CommandHandler("orcamento",  cmd_orcamento))
+    app.add_handler(CommandHandler("historico",  cmd_historico))
+    app.add_handler(CommandHandler("tabela",     cmd_tabela))
+    app.add_handler(CommandHandler("meusgastos", cmd_meusgastos))
+    app.add_handler(CommandHandler("deletar",    cmd_deletar))
+    app.add_handler(CommandHandler("desfazer",   cmd_desfazer))
+    app.add_handler(conv_categoria)
+    app.add_handler(conv_valor)
     app.add_handler(CallbackQueryHandler(handle_callback))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, processar_gasto))
-    print("Bot rodando...")
+
+    print("Bot rodando v5...")
     app.run_polling()
 
 if __name__ == "__main__":
