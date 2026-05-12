@@ -29,14 +29,14 @@ SUPABASE_URL   = "https://ahdwgcsqugqwhjgatpea.supabase.co"
 SUPABASE_KEY   = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFoZHdnY3NxdWdxd2hqZ2F0cGVhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg1MzM3NDQsImV4cCI6MjA5NDEwOTc0NH0.-I1_Blm7pX0ehJHGVmLHvyOTGb-f0iEHF8e4Uiesr-Q"
 
 ORCAMENTO = {
-    "mercado":     1200.00,
-    "restaurante":  600.00,
-    "transporte":   400.00,
-    "lazer":        300.00,
-    "saude":        200.00,
-    "moradia":     2500.00,
+    "mercado":     1400.00,
+    "restaurante":  1000.00,
+    "transporte":   700.00,
+    "lazer":        600.00,
+    "saude":        500.00,
+    "moradia":     800.00,
     "roupas":       300.00,
-    "outros":       200.00,
+    "outros":       400.00,
 }
 
 ALIASES = {
