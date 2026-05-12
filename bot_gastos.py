@@ -669,26 +669,15 @@ async def cb_alterar_valor(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     cat = query.data.split(":")[1]
-    ctx.user_data["cat_valor"] = cat
     atual = ORCAMENTO[cat]
 
-    # botões com valores sugeridos
-    sugestoes = [200, 300, 400, 500, 600, 800, 1000, 1200, 1500, 2000, 2500, 3000]
-    botoes = []
-    linha = []
-    for s in sugestoes:
-        linha.append(InlineKeyboardButton(fmt_brl(s), callback_data=f"altval_confirm:{cat}:{s}"))
-        if len(linha) == 3:
-            botoes.append(linha)
-            linha = []
-    if linha:
-        botoes.append(linha)
-    botoes.append([InlineKeyboardButton("❌ Cancelar", callback_data="altval_confirm:cancelar:0")])
+    # salva estado no bot_data usando chat_id como chave
+    chat_id = query.message.chat_id
+    ctx.bot_data[f"aguarda_valor_{chat_id}"] = cat
 
     await query.message.reply_text(
-        f"💰 Limite atual de *{cat.capitalize()}*: {fmt_brl(atual)}\n\nEscolha o novo valor:",
-        parse_mode="Markdown",
-        reply_markup=InlineKeyboardMarkup(botoes)
+        f"💰 Limite atual de *{cat.capitalize()}*: {fmt_brl(atual)}\n\nDigite o novo valor em R$:",
+        parse_mode="Markdown"
     )
     return AGUARDA_NOVO_VALOR
 
@@ -756,6 +745,36 @@ ATALHOS = {
 
 async def processar_gasto(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     texto = update.message.text.strip()
+
+    # verifica se está aguardando novo valor de categoria
+    chat_id = update.message.chat_id
+    pending_cat = ctx.bot_data.get(f"aguarda_valor_{chat_id}")
+    if pending_cat:
+        val_raw = texto.replace(",", ".")
+        try:
+            novo_valor = float(val_raw)
+            if novo_valor <= 0:
+                raise ValueError
+            antigo = ORCAMENTO.get(pending_cat, 0)
+            ORCAMENTO[pending_cat] = novo_valor
+            del ctx.bot_data[f"aguarda_valor_{chat_id}"]
+            await update.message.reply_text(
+                f"✅ Limite de *{pending_cat.capitalize()}* alterado de {fmt_brl(antigo)} para {fmt_brl(novo_valor)}!",
+                parse_mode="Markdown"
+            )
+            hoje = agora_br().strftime("%d/%m/%Y")
+            linhas = [f"💰 *Orçamento Mensal atualizado — {hoje}*\n"]
+            for c, v in ORCAMENTO.items():
+                linhas.append(f"• *{c.capitalize()}:* {fmt_brl(v)}")
+            linhas.append(f"\n*Total:* {fmt_brl(sum(ORCAMENTO.values()))}")
+            await update.message.reply_text("\n".join(linhas), parse_mode="Markdown")
+            await enviar_painel(update.message, ctx)
+        except ValueError:
+            await update.message.reply_text(
+                f"❌ Valor inválido. Digite um número positivo. Ex: `600` ou `1.200`",
+                parse_mode="Markdown"
+            )
+        return
 
     # verifica atalhos por palavra-chave
     texto_lower = texto.lower()
@@ -1204,7 +1223,7 @@ def main():
     app.add_handler(CallbackQueryHandler(handle_callback))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, processar_gasto))
 
-    print("Bot rodando v25...")
+    print("Bot rodando v26...")
     app.run_polling()
 
 if __name__ == "__main__":
