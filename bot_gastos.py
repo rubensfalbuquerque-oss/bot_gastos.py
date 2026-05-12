@@ -18,6 +18,11 @@ from telegram.ext import (
 # CONFIGURAÇÃO — edite apenas aqui
 # ──────────────────────────────────────────
 
+
+def fmt_brl(valor):
+    """Formata valor em reais com vírgula: R$ 1.200,00"""
+    return f"R$ {valor:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+
 TOKEN          = "8798424595:AAFMfBeoYmSXyBH3vEQ0sq2UPxNSvc0scRU"
 SUPABASE_URL   = "https://ahdwgcsqugqwhjgatpea.supabase.co"
 SUPABASE_KEY   = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFoZHdnY3NxdWdxd2hqZ2F0cGVhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg1MzM3NDQsImV4cCI6MjA5NDEwOTc0NH0.-I1_Blm7pX0ehJHGVmLHvyOTGb-f0iEHF8e4Uiesr-Q"
