@@ -1307,6 +1307,7 @@ async def handle_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         acao = partes[1]
         if acao == "nao":
             await query.edit_message_text("👍 Ok, lançamento avulso registrado.")
+            await enviar_painel(query.message, ctx)
             return
         # rec:sim:categoria:valor:descricao:dia
         _, _, cat, val, desc, dia = partes
@@ -1457,7 +1458,7 @@ def main():
     app.add_handler(CallbackQueryHandler(handle_callback))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, processar_gasto))
 
-    print("Bot rodando v31...")
+    print("Bot rodando v32...")
     app.run_polling(drop_pending_updates=True)
 
 if __name__ == "__main__":
