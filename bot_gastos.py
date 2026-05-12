@@ -210,6 +210,7 @@ async def cmd_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         "/resumo — saldo de todas as categorias\n"
         "/historico — últimos 10 lançamentos\n"
         "/orcamento — limites configurados\n"
+        "/tabela — lista completa de gastos do mês\n"
         "/desfazer — remove o último lançamento\n\n"
         "💾 _Dados salvos no Supabase_"
     )
@@ -248,6 +249,41 @@ async def cmd_historico(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 f"`{r['data']}` *{r['categoria'].capitalize()}* "
                 f"R$ {r['valor']:.2f}{desc} _{r['autor']}_"
             )
+        await update.message.reply_text("\n".join(linhas), parse_mode="Markdown")
+    except Exception as e:
+        await update.message.reply_text(f"❌ Erro:\n`{e}`", parse_mode="Markdown")
+
+async def cmd_tabela(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    try:
+        gastos = buscar_gastos_mes()
+        mes_label = datetime.now().strftime("%B/%Y").capitalize()
+
+        todos = []
+        for cat, regs in gastos.items():
+            for r in regs:
+                todos.append({**r, "categoria": cat})
+
+        if not todos:
+            await update.message.reply_text("Nenhum lançamento este mês ainda.")
+            return
+
+        linhas = [f"📋 *Tabela de gastos — {mes_label}*\n"]
+
+        for cat, limite in ORCAMENTO.items():
+            regs = gastos.get(cat, [])
+            if not regs:
+                continue
+            total_cat = sum(r["valor"] for r in regs)
+            linhas.append(f"\n*{cat.capitalize()}* — Total: R$ {total_cat:.2f}")
+            linhas.append("─" * 20)
+            for r in regs:
+                desc = f" — {r['desc']}" if r.get("desc") else ""
+                linhas.append(f"`{r['data']}` R$ {r['valor']:.2f}{desc} _{r['autor']}_")
+
+        total_geral = sum(r["valor"] for r in todos)
+        linhas.append(f"\n{'─' * 20}")
+        linhas.append(f"💰 *Total gasto: R$ {total_geral:.2f}*")
+
         await update.message.reply_text("\n".join(linhas), parse_mode="Markdown")
     except Exception as e:
         await update.message.reply_text(f"❌ Erro:\n`{e}`", parse_mode="Markdown")
@@ -406,10 +442,11 @@ def main():
     app.add_handler(CommandHandler("resumo",    cmd_resumo))
     app.add_handler(CommandHandler("orcamento", cmd_orcamento))
     app.add_handler(CommandHandler("historico", cmd_historico))
+    app.add_handler(CommandHandler("tabela",    cmd_tabela))
     app.add_handler(CommandHandler("desfazer",  cmd_desfazer))
     app.add_handler(CallbackQueryHandler(handle_callback))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, processar_gasto))
-    print("Bot rodando v3...")
+    print("Bot rodando...")
     app.run_polling()
 
 if __name__ == "__main__":
