@@ -8,6 +8,7 @@ import os
 import re
 import httpx
 from datetime import datetime
+import pytz
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     ApplicationBuilder, CommandHandler, MessageHandler,
@@ -79,11 +80,16 @@ HEADERS = {
     "Prefer": "return=representation",
 }
 
+BR_TZ = pytz.timezone("America/Sao_Paulo")
+
+def agora_br():
+    return datetime.now(BR_TZ)
+
 def mes_atual():
-    return datetime.now().strftime("%Y-%m")
+    return agora_br().strftime("%Y-%m")
 
 def data_hora():
-    return datetime.now().strftime("%d/%m/%Y %H:%M")
+    return agora_br().strftime("%d/%m/%Y %H:%M")
 
 def adicionar_gasto(categoria, valor, descricao, autor):
     payload = {
@@ -196,7 +202,7 @@ def emoji_status(gasto, limite):
     return "🟢"
 
 def formatar_resumo(gastos):
-    hoje = datetime.now().strftime("%d/%m/%Y")
+    hoje = agora_br().strftime("%d/%m/%Y")
     linhas = [f"📊 *Resumo — {hoje}*\n"]
     total_gasto = 0
     total_orc = sum(ORCAMENTO.values())
@@ -246,7 +252,7 @@ def parece_lancamento(texto):
 # ──────────────────────────────────────────
 
 async def cmd_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    hoje = datetime.now().strftime("%d/%m/%Y")
+    hoje = agora_br().strftime("%d/%m/%Y")
     msg = (
         f"👋 *Bot de Gastos ativo!* — {hoje}\n\n"
         "*Como registrar:*\n"
@@ -282,7 +288,7 @@ async def cmd_resumo(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"❌ Erro ao buscar dados:\n`{e}`", parse_mode="Markdown")
 
 async def cmd_orcamento(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    hoje = datetime.now().strftime("%d/%m/%Y")
+    hoje = agora_br().strftime("%d/%m/%Y")
     linhas = [f"💰 *Orçamento Mensal — {hoje}*\n"]
     for cat, valor in ORCAMENTO.items():
         linhas.append(f"• *{cat.capitalize()}:* {fmt_brl(valor)}")
@@ -301,13 +307,18 @@ async def cmd_historico(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             return
         ultimos = todos[-10:]
         ultimos.reverse()
-        hoje = datetime.now().strftime("%d/%m/%Y")
+        hoje = agora_br().strftime("%d/%m/%Y")
         linhas = [f"🗂 *Últimos lançamentos — {hoje}*\n"]
         for r in ultimos:
             desc = f" — {r['desc']}" if r.get("desc") else ""
+            # data já vem no formato "dd/mm/yyyy hh:mm"
+            partes_data = r['data'].split(" ") if r.get('data') else ["?", "?"]
+            dt = partes_data[0] if len(partes_data) > 0 else "?"
+            hr = partes_data[1] if len(partes_data) > 1 else "?"
+            desc_txt = r['desc'] if r.get('desc') else "—"
             linhas.append(
-                f"`{r['data']}` *{r['categoria'].capitalize()}* "
-                f"{fmt_brl(r['valor'])}{desc} _{r['autor']}_"
+                f"`{dt}` | `{hr}` | *{r['categoria'].capitalize()}* | "
+                f"{fmt_brl(r['valor'])} | {desc_txt} | _{r['autor']}_"
             )
         await update.message.reply_text("\n".join(linhas), parse_mode="Markdown")
     except Exception as e:
@@ -316,7 +327,7 @@ async def cmd_historico(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 async def cmd_tabela(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     try:
         gastos = buscar_gastos_mes()
-        hoje = datetime.now().strftime("%d/%m/%Y")
+        hoje = agora_br().strftime("%d/%m/%Y")
 
         todos = []
         for cat, regs in gastos.items():
@@ -337,8 +348,11 @@ async def cmd_tabela(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             linhas.append(f"\n*{cat.capitalize()}* — Total: {fmt_brl(total_cat)}")
             linhas.append("─" * 20)
             for r in regs:
-                desc = f" — {r['desc']}" if r.get("desc") else ""
-                linhas.append(f"`{r['data']}` {fmt_brl(r['valor'])}{desc} _{r['autor']}_")
+                partes_data = r['data'].split(" ") if r.get('data') else ["?", "?"]
+                dt = partes_data[0] if len(partes_data) > 0 else "?"
+                hr = partes_data[1] if len(partes_data) > 1 else "?"
+                desc_txt = r['desc'] if r.get('desc') else "—"
+                linhas.append(f"`{dt}` | `{hr}` | {fmt_brl(r['valor'])} | {desc_txt} | _{r['autor']}_")
 
         total_geral = sum(r["valor"] for r in todos)
         linhas.append(f"\n{'─' * 20}")
@@ -351,7 +365,7 @@ async def cmd_tabela(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 async def cmd_meusgastos(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     try:
         gastos = buscar_gastos_mes()
-        hoje = datetime.now().strftime("%d/%m/%Y")
+        hoje = agora_br().strftime("%d/%m/%Y")
 
         # agrupa por autor
         por_autor = {}
@@ -401,10 +415,11 @@ async def cmd_deletar(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             desc  = reg.get("descricao", "")
             data  = reg.get("data", "")
             autor = reg.get("autor", "")
-            label = f"#{i} {data} | {cat} R${val:.0f}"
-            if desc:
-                label += f" — {desc}"
-            label += f" ({autor})"
+            partes_data = data.split(" ") if data else ["?", "?"]
+            dt = partes_data[0] if len(partes_data) > 0 else "?"
+            hr = partes_data[1] if len(partes_data) > 1 else "?"
+            desc_txt = desc if desc else "—"
+            label = f"#{i} {dt} | {hr} | {cat} | {fmt_brl(val)} | {desc_txt} | {autor}"
             botoes.append([InlineKeyboardButton(label, callback_data=f"del:{reg['id']}")])
 
         botoes.append([InlineKeyboardButton("❌ Cancelar", callback_data="del:cancelar")])
@@ -425,7 +440,7 @@ async def cmd_recorrentes(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         if not registros:
             await update.message.reply_text("Nenhum lançamento recorrente cadastrado.")
             return
-        hoje = datetime.now().strftime("%d/%m/%Y")
+        hoje = agora_br().strftime("%d/%m/%Y")
         linhas = [f"🔁 *Lançamentos recorrentes — {hoje}*\n"]
         for r in registros:
             cat  = r.get("categoria", "?").capitalize()
@@ -809,7 +824,7 @@ async def handle_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await query.message.reply_text(formatar_resumo(gastos), parse_mode="Markdown")
 
         # pergunta se é recorrente
-        dia = datetime.now().strftime("%d")
+        dia = agora_br().strftime("%d")
         teclado_rec = InlineKeyboardMarkup([[
             InlineKeyboardButton(f"✅ Sim, todo dia {dia}", callback_data=f"rec:sim:{dados['categoria']}:{dados['valor']}:{dados['descricao']}:{dia}"),
             InlineKeyboardButton("❌ Não", callback_data="rec:nao"),
@@ -869,7 +884,7 @@ def main():
     app.add_handler(CallbackQueryHandler(handle_callback))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, processar_gasto))
 
-    print("Bot rodando v12...")
+    print("Bot rodando v13...")
     app.run_polling()
 
 if __name__ == "__main__":
