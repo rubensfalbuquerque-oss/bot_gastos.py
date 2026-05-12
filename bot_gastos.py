@@ -279,6 +279,7 @@ async def cmd_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         "💾 _Dados salvos no Supabase_"
     )
     await update.message.reply_text(msg, parse_mode="Markdown")
+    await enviar_painel(update.message, ctx)
 
 
 
@@ -326,8 +327,8 @@ async def cmd_painel(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             InlineKeyboardButton("💰 Orçamento",      callback_data="painel:orcamento"),
         ],
         [
-            InlineKeyboardButton("💰 Orçamento",      callback_data="painel:orcamento"),
             InlineKeyboardButton("🔁 Recorrentes",    callback_data="painel:recorrentes"),
+            InlineKeyboardButton("🗑 Deletar",        callback_data="painel:deletar"),
         ],
         [
             InlineKeyboardButton("➕ Nova Categoria",  callback_data="painel:nova_categoria"),
@@ -335,7 +336,7 @@ async def cmd_painel(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         ],
         [
             InlineKeyboardButton("💲 Alterar Limite", callback_data="painel:alterar_valor"),
-            InlineKeyboardButton("🗑 Deletar",        callback_data="painel:deletar"),
+            InlineKeyboardButton("↩️ Desfazer",       callback_data="painel:desfazer"),
         ],
         [
             InlineKeyboardButton("↩️ Desfazer último", callback_data="painel:desfazer"),
@@ -425,6 +426,7 @@ async def cmd_historico(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         linhas.append(f"💰 *Total gasto: {fmt_brl(total_geral)}*")
 
         await update.message.reply_text("\n".join(linhas), parse_mode="Markdown")
+        await enviar_painel(update.message, ctx)
     except Exception as e:
         await update.message.reply_text(f"❌ Erro:\n`{e}`", parse_mode="Markdown")
 
@@ -462,6 +464,7 @@ async def cmd_meusgastos(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         linhas.append(f"💰 *Total geral: {fmt_brl(total_geral)}*")
 
         await update.message.reply_text("\n".join(linhas), parse_mode="Markdown")
+        await enviar_painel(update.message, ctx)
     except Exception as e:
         await update.message.reply_text(f"❌ Erro:\n`{e}`", parse_mode="Markdown")
 
@@ -1154,7 +1157,7 @@ def main():
     app.add_handler(CallbackQueryHandler(handle_callback))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, processar_gasto))
 
-    print("Bot rodando v17...")
+    print("Bot rodando v19...")
     app.run_polling()
 
 if __name__ == "__main__":
