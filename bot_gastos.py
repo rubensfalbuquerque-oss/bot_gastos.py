@@ -384,8 +384,7 @@ async def cmd_deletar(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             reply_markup=teclado
         )
     except Exception as e:
-        await update.message.reply_text(f"❌ Erro:
-`{e}`", parse_mode="Markdown")
+        await update.message.reply_text(f"❌ Erro:\n`{e}`", parse_mode="Markdown")
 
 async def cmd_desfazer(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     try:
