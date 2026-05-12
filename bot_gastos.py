@@ -29,14 +29,14 @@ SUPABASE_URL   = "https://ahdwgcsqugqwhjgatpea.supabase.co"
 SUPABASE_KEY   = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFoZHdnY3NxdWdxd2hqZ2F0cGVhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg1MzM3NDQsImV4cCI6MjA5NDEwOTc0NH0.-I1_Blm7pX0ehJHGVmLHvyOTGb-f0iEHF8e4Uiesr-Q"
 
 ORCAMENTO = {
-    "mercado":     1400.00,
-    "restaurante":  1000.00,
-    "transporte":   700.00,
-    "lazer":        600.00,
-    "saude":        500.00,
-    "moradia":     800.00,
+    "mercado":     1200.00,
+    "restaurante":  600.00,
+    "transporte":   400.00,
+    "lazer":        300.00,
+    "saude":        200.00,
+    "moradia":     2500.00,
     "roupas":       300.00,
-    "outros":       400.00,
+    "outros":       200.00,
 }
 
 ALIASES = {
@@ -840,9 +840,10 @@ async def handle_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         if acao == "resumo":
             try:
                 gastos = buscar_gastos_mes()
-                await query.edit_message_text(formatar_resumo(gastos), parse_mode="Markdown")
+                await query.message.reply_text(formatar_resumo(gastos), parse_mode="Markdown")
+                await enviar_painel(query.message, ctx)
             except Exception as e:
-                await query.edit_message_text(f"❌ Erro:\n`{e}`", parse_mode="Markdown")
+                await query.message.reply_text(f"❌ Erro:\n`{e}`", parse_mode="Markdown")
 
         elif acao == "UNUSED_historico_bloco":
             try:
@@ -900,9 +901,10 @@ async def handle_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     linhas.append("")
                 linhas.append(f"{'─'*20}")
                 linhas.append(f"💰 *Total geral: {fmt_brl(total_geral)}*")
-                await query.edit_message_text("\n".join(linhas), parse_mode="Markdown")
+                await query.message.reply_text("\n".join(linhas), parse_mode="Markdown")
+                await enviar_painel(query.message, ctx)
             except Exception as e:
-                await query.edit_message_text(f"❌ Erro:\n`{e}`", parse_mode="Markdown")
+                await query.message.reply_text(f"❌ Erro:\n`{e}`", parse_mode="Markdown")
 
         elif acao == "historico":
             try:
@@ -921,9 +923,10 @@ async def handle_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 for r in ultimos:
                     desc_txt = r["desc"] if r.get("desc") else "—"
                     linhas.append(f"`{r['data']}` | *{r['categoria'].capitalize()}* | {fmt_brl(r['valor'])} | {desc_txt} | _{r['autor']}_")
-                await query.edit_message_text("\n".join(linhas), parse_mode="Markdown")
+                await query.message.reply_text("\n".join(linhas), parse_mode="Markdown")
+                await enviar_painel(query.message, ctx)
             except Exception as e:
-                await query.edit_message_text(f"❌ Erro:\n`{e}`", parse_mode="Markdown")
+                await query.message.reply_text(f"❌ Erro:\n`{e}`", parse_mode="Markdown")
 
         elif acao == "orcamento":
             hoje = agora_br().strftime("%d/%m/%Y")
@@ -931,7 +934,8 @@ async def handle_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             for cat, valor in ORCAMENTO.items():
                 linhas.append(f"• *{cat.capitalize()}:* {fmt_brl(valor)}")
             linhas.append(f"\n*Total:* {fmt_brl(sum(ORCAMENTO.values()))}")
-            await query.edit_message_text("\n".join(linhas), parse_mode="Markdown")
+            await query.message.reply_text("\n".join(linhas), parse_mode="Markdown")
+            await enviar_painel(query.message, ctx)
 
         elif acao == "recorrentes":
             try:
@@ -1147,7 +1151,7 @@ def main():
     app.add_handler(CallbackQueryHandler(handle_callback))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, processar_gasto))
 
-    print("Bot rodando v20...")
+    print("Bot rodando v21...")
     app.run_polling()
 
 if __name__ == "__main__":
