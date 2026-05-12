@@ -89,7 +89,7 @@ def mes_atual():
     return agora_br().strftime("%Y-%m")
 
 def data_hora():
-    return agora_br().strftime("%d/%m/%Y %H:%M")
+    return agora_br().strftime("%d/%m/%Y")
 
 def adicionar_gasto(categoria, valor, descricao, autor):
     payload = {
@@ -268,8 +268,7 @@ async def cmd_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         "/painel — painel clicável com todas as funções\n"
         "/resumo — saldo de todas as categorias\n"
         "/meusgastos — resumo por usuário\n"
-        "/tabela — lista completa de gastos do mês\n"
-        "/historico — últimos 10 lançamentos\n"
+        "/historico — lista completa de gastos do mês\n"
         "/orcamento — limites configurados\n"
         "/nova\\_categoria — criar uma nova categoria\n"
         "/alterar\\_categoria — renomear uma categoria\n"
@@ -282,16 +281,49 @@ async def cmd_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(msg, parse_mode="Markdown")
 
 
+
+async def enviar_painel(update_or_message, ctx):
+    """Envia o painel após qualquer comando de consulta."""
+    hoje = agora_br().strftime("%d/%m/%Y %H:%M")
+    teclado = InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton("📊 Resumo",        callback_data="painel:resumo"),
+            InlineKeyboardButton("📋 Histórico",      callback_data="painel:historico"),
+        ],
+        [
+            InlineKeyboardButton("👤 Meus Gastos",    callback_data="painel:meusgastos"),
+            InlineKeyboardButton("💰 Orçamento",      callback_data="painel:orcamento"),
+        ],
+        [
+            InlineKeyboardButton("🔁 Recorrentes",    callback_data="painel:recorrentes"),
+            InlineKeyboardButton("🗑 Deletar",        callback_data="painel:deletar"),
+        ],
+        [
+            InlineKeyboardButton("➕ Nova Categoria",  callback_data="painel:nova_categoria"),
+            InlineKeyboardButton("✏️ Renomear Cat.",  callback_data="painel:alterar_categoria"),
+        ],
+        [
+            InlineKeyboardButton("💲 Alterar Limite", callback_data="painel:alterar_valor"),
+            InlineKeyboardButton("↩️ Desfazer",       callback_data="painel:desfazer"),
+        ],
+    ])
+    msg = update_or_message if hasattr(update_or_message, 'reply_text') else update_or_message.message
+    await msg.reply_text(
+        f"🎛 *Painel* — _{hoje}_\nEscolha uma opção:",
+        parse_mode="Markdown",
+        reply_markup=teclado
+    )
+
 async def cmd_painel(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     hoje = agora_br().strftime("%d/%m/%Y %H:%M")
     teclado = InlineKeyboardMarkup([
         [
             InlineKeyboardButton("📊 Resumo",        callback_data="painel:resumo"),
-            InlineKeyboardButton("📋 Tabela",         callback_data="painel:tabela"),
+            InlineKeyboardButton("📋 Histórico",      callback_data="painel:historico"),
         ],
         [
             InlineKeyboardButton("👤 Meus Gastos",    callback_data="painel:meusgastos"),
-            InlineKeyboardButton("🗂 Histórico",      callback_data="painel:historico"),
+            InlineKeyboardButton("💰 Orçamento",      callback_data="painel:orcamento"),
         ],
         [
             InlineKeyboardButton("💰 Orçamento",      callback_data="painel:orcamento"),
@@ -319,6 +351,7 @@ async def cmd_resumo(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     try:
         gastos = buscar_gastos_mes()
         await update.message.reply_text(formatar_resumo(gastos), parse_mode="Markdown")
+        await enviar_painel(update.message, ctx)
     except Exception as e:
         await update.message.reply_text(f"❌ Erro ao buscar dados:\n`{e}`", parse_mode="Markdown")
 
@@ -329,8 +362,9 @@ async def cmd_orcamento(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         linhas.append(f"• *{cat.capitalize()}:* {fmt_brl(valor)}")
     linhas.append(f"\n*Total:* {fmt_brl(sum(ORCAMENTO.values()))}")
     await update.message.reply_text("\n".join(linhas), parse_mode="Markdown")
+    await enviar_painel(update.message, ctx)
 
-async def cmd_historico(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+async def cmd_historico_old(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     try:
         gastos = buscar_gastos_mes()
         todos = []
@@ -347,19 +381,16 @@ async def cmd_historico(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         for r in ultimos:
             desc = f" — {r['desc']}" if r.get("desc") else ""
             # data já vem no formato "dd/mm/yyyy hh:mm"
-            partes_data = r['data'].split(" ") if r.get('data') else ["?", "?"]
-            dt = partes_data[0] if len(partes_data) > 0 else "?"
-            hr = partes_data[1] if len(partes_data) > 1 else "?"
             desc_txt = r['desc'] if r.get('desc') else "—"
             linhas.append(
-                f"`{dt}` | `{hr}` | *{r['categoria'].capitalize()}* | "
+                f"`{r['data']}` | *{r['categoria'].capitalize()}* | "
                 f"{fmt_brl(r['valor'])} | {desc_txt} | _{r['autor']}_"
             )
         await update.message.reply_text("\n".join(linhas), parse_mode="Markdown")
     except Exception as e:
         await update.message.reply_text(f"❌ Erro:\n`{e}`", parse_mode="Markdown")
 
-async def cmd_tabela(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+async def cmd_historico(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     try:
         gastos = buscar_gastos_mes()
         hoje = agora_br().strftime("%d/%m/%Y")
@@ -682,9 +713,10 @@ async def cancelar_conversa(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 ATALHOS = {
     "painel":             cmd_painel,
     "resumo":             cmd_resumo,
-    "tabela":             cmd_tabela,
+    "tabela":             cmd_historico,
     "historico":          cmd_historico,
     "histórico":          cmd_historico,
+    "tabela":             cmd_historico,
     "orcamento":          cmd_orcamento,
     "orçamento":          cmd_orcamento,
     "meusgastos":         cmd_meusgastos,
@@ -816,7 +848,7 @@ async def handle_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             except Exception as e:
                 await query.edit_message_text(f"❌ Erro:\n`{e}`", parse_mode="Markdown")
 
-        elif acao == "tabela":
+        elif acao == "UNUSED_historico_bloco":
             try:
                 gastos = buscar_gastos_mes()
                 hoje = agora_br().strftime("%d/%m/%Y")
@@ -894,11 +926,8 @@ async def handle_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 ultimos.reverse()
                 linhas = [f"🗂 *Últimos lançamentos — {hoje}*\n"]
                 for r in ultimos:
-                    partes_data = r["data"].split(" ") if r.get("data") else ["?","?"]
-                    dt = partes_data[0] if len(partes_data)>0 else "?"
-                    hr = partes_data[1] if len(partes_data)>1 else "?"
                     desc_txt = r["desc"] if r.get("desc") else "—"
-                    linhas.append(f"`{dt}` | `{hr}` | *{r['categoria'].capitalize()}* | {fmt_brl(r['valor'])} | {desc_txt} | _{r['autor']}_")
+                    linhas.append(f"`{r['data']}` | *{r['categoria'].capitalize()}* | {fmt_brl(r['valor'])} | {desc_txt} | _{r['autor']}_")
                 await query.edit_message_text("\n".join(linhas), parse_mode="Markdown")
             except Exception as e:
                 await query.edit_message_text(f"❌ Erro:\n`{e}`", parse_mode="Markdown")
@@ -945,11 +974,8 @@ async def handle_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     desc  = reg.get("descricao","")
                     data  = reg.get("data","")
                     autor = reg.get("autor","")
-                    partes_data = data.split(" ") if data else ["?","?"]
-                    dt = partes_data[0] if len(partes_data)>0 else "?"
-                    hr = partes_data[1] if len(partes_data)>1 else "?"
                     desc_txt = desc if desc else "—"
-                    label = f"#{i} {dt} | {hr} | {cat} | {fmt_brl(val)} | {desc_txt} | {autor}"
+                    label = f"#{i} {data} | {cat} | {fmt_brl(val)} | {desc_txt} | {autor}"
                     botoes.append([InlineKeyboardButton(label, callback_data=f"del:{reg['id']}")])
                 botoes.append([InlineKeyboardButton("❌ Cancelar", callback_data="del:cancelar")])
                 await query.edit_message_text(
@@ -1118,7 +1144,6 @@ def main():
     app.add_handler(CommandHandler("resumo",     cmd_resumo))
     app.add_handler(CommandHandler("orcamento",  cmd_orcamento))
     app.add_handler(CommandHandler("historico",  cmd_historico))
-    app.add_handler(CommandHandler("tabela",     cmd_tabela))
     app.add_handler(CommandHandler("meusgastos", cmd_meusgastos))
     app.add_handler(CommandHandler("deletar",    cmd_deletar))
     app.add_handler(CommandHandler("recorrentes", cmd_recorrentes))
@@ -1129,7 +1154,7 @@ def main():
     app.add_handler(CallbackQueryHandler(handle_callback))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, processar_gasto))
 
-    print("Bot rodando v15...")
+    print("Bot rodando v17...")
     app.run_polling()
 
 if __name__ == "__main__":
